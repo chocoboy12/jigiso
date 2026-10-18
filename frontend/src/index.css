@@ -1,0 +1,346 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * JIGISO — feuille de style de base.
+ * Tokens et composants repris de la maquette (voir tailwind.config.js).
+ */
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: Inter, 'Helvetica Neue', system-ui, -apple-system, sans-serif;
+    background-color: #F7F2E8;
+    color: #17150F;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: 1.08;
+  }
+
+  input, select, textarea, button { font-family: inherit; }
+
+  ::selection { background: rgba(201, 138, 30, .25); }
+}
+
+@layer components {
+
+  /* ── Boutons ─────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-ink text-cream px-6 py-3 rounded-pill font-semibold text-sm
+           hover:bg-[#241f16] active:scale-[.98]
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2
+           bg-gold text-ink px-6 py-3 rounded-pill font-semibold text-sm
+           hover:bg-[#b87c17] active:scale-[.98]
+           transition-all duration-200
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-transparent text-ink px-6 py-3 rounded-pill font-semibold text-sm
+           border border-ink/25 hover:border-ink hover:bg-ink/[.04]
+           transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 text-clay-500 px-4 py-2 rounded-pill
+           font-medium text-sm hover:text-ink hover:bg-ink/[.04]
+           transition-all duration-200;
+  }
+
+  /* Pilule de filtre — état inactif / actif */
+  .pill {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-pill text-[13px] font-semibold
+           border border-ink/15 text-clay-500 bg-transparent
+           hover:border-ink/40 hover:text-ink transition-all duration-200 whitespace-nowrap;
+  }
+  .pill-active {
+    @apply bg-ink text-cream border-ink hover:text-cream;
+  }
+
+  /* ── Champs ──────────────────────────────────────────── */
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl bg-cream-card border border-cream-line
+           text-ink placeholder-clay-300 text-sm
+           focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20
+           transition-all duration-200;
+  }
+
+  .select-field {
+    @apply w-full px-4 py-3 rounded-xl bg-cream-card border border-cream-line
+           text-ink text-sm cursor-pointer
+           focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20
+           transition-all duration-200;
+  }
+
+  .label {
+    @apply block font-mono text-2xs tracking-label uppercase text-clay-400 mb-2;
+  }
+
+  /* ── Cartes ──────────────────────────────────────────── */
+  .card {
+    @apply bg-cream-card rounded-card border border-cream-line/70 shadow-card
+           hover:shadow-card-hover transition-all duration-300;
+  }
+
+  .panel-dark {
+    @apply relative overflow-hidden rounded-panel bg-ink text-cream;
+  }
+
+  /* ── Badges de statut ────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 font-mono text-2xs tracking-label uppercase
+           px-2.5 py-1 rounded-md;
+  }
+  .badge-pending  { @apply badge bg-gold/15 text-gold-deep; }
+  .badge-approved { @apply badge bg-leaf/15 text-leaf; }
+  .badge-rejected { @apply badge bg-terracotta/15 text-terracotta; }
+  .badge-rented   { @apply badge bg-river/15 text-river; }
+
+  /* ── Titres de section ───────────────────────────────── */
+  /* Surtitre numéroté : "01 — SÉLECTION" */
+  .eyebrow {
+    @apply font-mono text-2xs tracking-eyebrow uppercase text-gold;
+  }
+
+  .section-title {
+    /* Source Serif a des empattements : une approche trop serrée les colle.
+       `tracking-tight` (-.02em) est remplacé par une valeur quasi neutre. */
+    @apply font-display font-bold text-ink text-[40px] leading-[1.08] tracking-[-.005em];
+  }
+
+  .section-subtitle {
+    @apply text-clay-500 mt-3 text-[15px];
+  }
+
+  /* Prix */
+  .price {
+    @apply font-display font-extrabold text-ink text-[22px] tracking-tight;
+  }
+  .price-unit {
+    @apply font-sans font-normal text-clay-400 text-[13px];
+  }
+}
+
+@layer utilities {
+
+  /* Hachures diagonales — placeholder d'image et texture de carte.
+     La teinte se donne par la couleur de fond de l'élément. */
+  .hatch {
+    background-image: repeating-linear-gradient(45deg, rgba(23,21,15,.5) 0 5px, transparent 5px 15px);
+  }
+  .hatch-fine {
+    background-image: repeating-linear-gradient(45deg, rgba(23,21,15,.35) 0 3px, transparent 3px 10px);
+  }
+  /* Hachure claire, pour les panneaux sombres (une hachure foncée y
+     serait invisible) */
+  .hatch-on-dark {
+    background-image: repeating-linear-gradient(45deg, rgba(201,138,30,.16) 0 5px, transparent 5px 18px);
+  }
+
+  /* Hachure discrète pour les fonds clairs/ocre : ne gêne pas la lecture */
+  .hatch-light {
+    background-image: repeating-linear-gradient(45deg, rgba(23,21,15,.10) 0 4px, transparent 4px 14px);
+  }
+  .hatch-gold {
+    background-image: repeating-linear-gradient(45deg, rgba(201,138,30,.16) 0 6px, transparent 6px 22px);
+  }
+
+  /* Trame quadrillée ocre des panneaux sombres */
+  .grid-texture {
+    background-image:
+      repeating-linear-gradient(90deg, rgba(201,138,30,.16) 0 1px, transparent 1px 26px),
+      repeating-linear-gradient(0deg,  rgba(201,138,30,.16) 0 1px, transparent 1px 26px);
+  }
+
+  /* Bande tricolore du Mali — vert / or / rouge */
+  .mali-band {
+    background: linear-gradient(90deg,
+      #1E6B3C 0 33.33%,
+      #C98A1E 33.33% 66.66%,
+      #B4532A 66.66% 100%);
+  }
+
+  /* Curseur de budget — piste crème, partie parcourue et pastille en ocre.
+     Le remplissage est peint via un dégradé sur la piste (background-size
+     piloté par l'attribut value côté navigateur : on utilise accent-color
+     en repli et un dégradé calculé pour WebKit). */
+  .range-gold {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 999px;
+    /* Repli ; le dégradé de remplissage est appliqué en ligne depuis React
+       (::-moz-range-progress n'existe pas sur WebKit, et accent-color ne
+       peint plus la piste dès qu'on personnalise la pastille). */
+    background: #D8D2C2;
+    outline: none;
+    cursor: pointer;
+  }
+  .range-gold::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: transparent;
+  }
+  .range-gold::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -6px;
+    border-radius: 50%;
+    background: #C98A1E;
+    border: 2px solid #FFFDF8;
+    box-shadow: 0 2px 6px rgba(23,21,15,.3);
+    transition: transform .15s;
+  }
+  .range-gold::-webkit-slider-thumb:hover { transform: scale(1.12); }
+  .range-gold::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background: #D8D2C2;
+  }
+  .range-gold::-moz-range-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: #C98A1E;
+  }
+  .range-gold::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #C98A1E;
+    border: 2px solid #FFFDF8;
+    box-shadow: 0 2px 6px rgba(23,21,15,.3);
+    cursor: pointer;
+  }
+  .range-gold:focus-visible {
+    box-shadow: 0 0 0 3px rgba(201,138,30,.25);
+  }
+
+  /* ── Révélation au défilement ────────────────────────────
+     L'état de départ est appliqué par .reveal, l'arrivée par .reveal-in.
+     Le délai se passe en style inline pour décaler les éléments d'une grille. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity .7s cubic-bezier(.22,.61,.36,1),
+                transform .7s cubic-bezier(.22,.61,.36,1);
+  }
+  .reveal-in { opacity: 1; transform: none; }
+
+  /* Zoom lent sur les photos du hero */
+  .ken-burns { animation: kenBurns 14s ease-out forwards; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal, .reveal-in { opacity: 1; transform: none; transition: none; }
+    .ken-burns { animation: none; }
+  }
+
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* Barre de défilement */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #F7F2E8; }
+::-webkit-scrollbar-thumb {
+  background: #D8D2C2;
+  border-radius: 999px;
+  border: 3px solid #F7F2E8;
+}
+::-webkit-scrollbar-thumb:hover { background: #B9B2A0; }
+
+/* Chargement */
+@keyframes shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #EFEADE 25%, #E3DDCE 50%, #EFEADE 75%);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes kenBurns {
+  from { transform: scale(1.06); }
+  to   { transform: scale(1.14); }
+}
+
+/* ── Titre animé du hero ──────────────────────────────────
+   Les mots montent en cascade au chargement, et la promesse en or
+   défile. Tout est désactivé si la personne a demandé moins
+   d'animations dans les réglages de son système. */
+@keyframes jigiso-rise {
+  from { opacity: 0; transform: translateY(.55em) rotate(1.2deg); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes jigiso-swap {
+  from { opacity: 0; transform: translateY(.38em); clip-path: inset(0 0 100% 0); }
+  to   { opacity: 1; transform: none;              clip-path: inset(0 0 -10% 0); }
+}
+@keyframes jigiso-underline {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.rise-in {
+  display: inline-block;
+  animation: jigiso-rise .75s cubic-bezier(.22,.8,.26,1) both;
+}
+.swap-in {
+  display: inline-block;
+  animation: jigiso-swap .55s cubic-bezier(.22,.8,.26,1) both;
+}
+.underline-sweep {
+  transform-origin: left center;
+  /* Le retard est fixé par le composant, pour rester synchronisé
+     avec la cascade des mots qui précède. */
+  animation: jigiso-underline .7s cubic-bezier(.22,.8,.26,1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .swap-in, .underline-sweep { animation: none; opacity: 1; transform: none; }
+}
+
+/* ── Écran d'ouverture ────────────────────────────────────
+   La marque se pose, le nom suit, puis la ligne de progression se remplit.
+   Rien ne s'anime si la personne a demandé moins d'animations : le composant
+   rend alors les mêmes éléments, fixes. */
+@keyframes jigiso-monte {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes jigiso-jauge {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes jigiso-splash-out {
+  to { opacity: 0; transform: scale(1.05); }
+}
+
+.splash-tagline { animation: jigiso-monte .45s cubic-bezier(.22,.8,.26,1) .46s both; }
+.splash-jauge   { transform-origin: left center;
+                  animation: jigiso-jauge 1.25s cubic-bezier(.4,0,.2,1) .4s both; }
+.splash-exit    { animation: jigiso-splash-out .5s ease-in both; }
+
+/* Le logo animé tourne en boucle : une fois construit, il se replie pour
+   repartir. On le fige donc au moment où l'écran commence à s'effacer, pour
+   que personne ne voie le logo se défaire pendant le fondu. */
+.splash-fige, .splash-fige * { animation-play-state: paused !important; }

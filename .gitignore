@@ -1,0 +1,75 @@
+# ── Secrets ──────────────────────────────────────────────────────────
+# Toutes les variantes, pas seulement « .env » : les sauvegardes datées
+# (.env.backup-20260926-171204) contiennent les mêmes clés et passeraient
+# sans cette règle. Seul l'exemple, qui ne porte que des valeurs factices,
+# est versionné.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
+
+# Service account Firebase / Google : un fichier JSON suffit à envoyer des
+# notifications au nom de l'application.
+**/google-services.json
+**/GoogleService-Info.plist
+**/serviceAccount*.json
+
+# ── Dépendances ──────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Fichiers produits ────────────────────────────────────────────────
+dist/
+build/
+*.log
+coverage/
+
+# ── Contenu déposé par les utilisateurs ──────────────────────────────
+# Photos d'annonces, de profil et pièces d'identité : des données
+# personnelles, qui n'ont rien à faire dans un dépôt.
+uploads/
+
+# ── Flutter / Dart ───────────────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/generated_plugin_registrant.dart
+
+# ── iOS / macOS ──────────────────────────────────────────────────────
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/App.framework
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
+**/*.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/Flutter/Generated.xcconfig
+
+# ── Android ──────────────────────────────────────────────────────────
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/android/app/debug/
+**/android/app/profile/output-metadata.json
+**/android/app/release/
+
+# ── Systèmes et éditeurs ─────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# ── Outils ───────────────────────────────────────────────────────────
+.claude/

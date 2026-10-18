@@ -1,0 +1,35 @@
+{
+  "folders": [
+    { "name": "Site web (React)", "path": "frontend" },
+    { "name": "Backend (API)", "path": "backend" },
+    { "name": "App mobile (Flutter)", "path": "mobile" }
+  ],
+  "settings": {
+    "files.exclude": { "**/node_modules": true, "**/build": true, "**/.dart_tool": true },
+    "search.exclude": { "**/node_modules": true, "**/build": true, "**/.dart_tool": true }
+  },
+  "extensions": {
+    "recommendations": ["Dart-Code.flutter", "Dart-Code.dart-code", "dbaeumer.vscode-eslint", "bradlc.vscode-tailwindcss"]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "App mobile (émulateur Android)",
+        "type": "dart",
+        "request": "launch",
+        "cwd": "${workspaceFolder:App mobile (Flutter)}",
+        "program": "lib/main.dart",
+        "args": ["--dart-define=API_URL=http://10.0.2.2:5001/api"]
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "Backend", "type": "shell", "command": "npm run dev", "options": { "cwd": "${workspaceFolder:Backend (API)}" }, "isBackground": true },
+      { "label": "Site web", "type": "shell", "command": "npm run dev", "options": { "cwd": "${workspaceFolder:Site web (React)}" }, "isBackground": true },
+      { "label": "Tout lancer (backend + site)", "dependsOn": ["Backend", "Site web"], "problemMatcher": [] }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Le mode « profile » sert à mesurer les performances réelles : code
+         compilé en avance, comme en production, mais toujours sur le serveur
+         de développement. Il lui faut donc les mêmes autorisations que le mode
+         débogage — sinon chaque appel échoue et l'on mesure une app qui ne
+         parle à rien.
+
+         Comme pour le manifeste de débogage, rien de tout cela n'atteint la
+         version publiée : le manifeste principal garde le blocage du trafic en
+         clair, car en production l'API doit être en HTTPS. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application android:usesCleartextTraffic="true" />
+</manifest>

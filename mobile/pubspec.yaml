@@ -1,0 +1,41 @@
+name: jigiso
+description: JIGISO — location de logements au Mali, sans commission.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.2.1
+  http: ^1.2.1
+  url_launcher: ^6.3.0
+  image_picker: ^1.1.2
+  geolocator: ^13.0.1
+  # Jeton JWT : trousseau iOS / EncryptedSharedPreferences Android. Un jeton
+  # garde l'accès au compte, il n'a rien à faire dans un stockage en clair.
+  flutter_secure_storage: ^9.2.2
+  # Connexion sociale (configuration native requise, voir README) :
+  # google_sign_in: ^6.2.1
+  # flutter_facebook_auth: ^7.0.1
+  # sign_in_with_apple: ^6.1.0
+
+# path_provider_android 2.3.x est passé à des liaisons JNI : il entraîne le
+# paquet `jni`, qui déclare un `ndkVersion` et force Gradle à télécharger le
+# NDK Android (~1 Go) alors qu'aucun code de ce projet n'est en C/C++.
+# La 2.2.x fait exactement le même travail sans cette contrainte.
+# À retirer le jour où le NDK s'installe sans difficulté.
+dependency_overrides:
+  path_provider_android: ">=2.2.0 <2.3.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo/
