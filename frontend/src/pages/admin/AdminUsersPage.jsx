@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Ban, Trash2, CheckCircle } from 'lucide-react';
 import { adminAPI } from '../../services/api';
-import { formatDate, ROLE_LABELS } from '../../utils/helpers';
+import { formatDate, ROLE_LABELS, resolveImageUrl } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 
 export default function AdminUsersPage() {
@@ -35,7 +35,7 @@ export default function AdminUsersPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Supprimer cet utilisateur définitivement ?')) return;
+    if (!confirm('Supprimer cet utilisateur définitivement ?\nS\'il est propriétaire, ses annonces seront supprimées aussi.')) return;
     try {
       await adminAPI.deleteUser(id);
       setUsers(p => p.filter(u => u._id !== id));
@@ -93,7 +93,7 @@ export default function AdminUsersPage() {
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
                           {u.profileImage?.url
-                            ? <img src={u.profileImage.url} alt="" className="w-9 h-9 rounded-full object-cover" />
+                            ? <img src={resolveImageUrl(u.profileImage.url)} alt="" className="w-9 h-9 rounded-full object-cover" />
                             : <span className="text-primary-600 font-bold text-sm">{u.name?.[0]}</span>
                           }
                         </div>

@@ -89,18 +89,20 @@ export const REQUEST_STATUS = {
  */
 const API_ORIGIN = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
 
+/* localhost, 127.x, 10.x (dont 10.0.2.2 de l'émulateur), 192.168.x, 172.16-31.x */
+const HOTE_LOCAL = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
 export const resolveImageUrl = (url) => {
   if (!url) return null;
 
   if (/^https?:\/\//i.test(url)) {
-    // Les annonces publiées depuis un poste de développement ont enregistré
-    // une URL absolue vers « localhost ». Sur un téléphone, localhost désigne
-    // le téléphone lui-même : l'image ne se chargerait jamais. On repointe
-    // donc ces URLs vers l'API réellement configurée.
-    if (!API_ORIGIN) return url;
+    // D'anciennes annonces ont enregistré l'adresse de l'appareil qui les a
+    // publiées : « localhost » (poste de dev) ou « 10.0.2.2 » (émulateur
+    // Android). Ailleurs ces adresses ne mènent nulle part : on repointe
+    // les fichiers /uploads/ de ces hôtes locaux vers l'API configurée.
     try {
       const u = new URL(url);
-      if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+      if (u.pathname.startsWith('/uploads/') && HOTE_LOCAL.test(u.hostname)) {
         return `${API_ORIGIN}${u.pathname}${u.search}`;
       }
     } catch { /* URL illisible : on la laisse telle quelle */ }

@@ -1,15 +1,14 @@
 const path = require('path');
-const fs = require('fs/promises');
 const User = require('../models/User');
 const SecurityLog = require('../models/SecurityLog');
 const emailService = require('../services/email.service');
 const {
-  generateToken, sha256, safeEqual, hashBuffer,
+  generateToken, sha256, safeEqual, hashBuffer, sniffMime,
 } = require('../utils/security');
 
 const EMAIL_TOKEN_TTL = 24 * 60 * 60 * 1000;   // 24 h
 
-const KYC_DIR = path.join(__dirname, '..', 'uploads', 'private', 'kyc');
+const privateStorage = require('../services/privateStorage');
 
 /* ══════════════ État de vérification ══════════════ */
 
@@ -135,17 +134,25 @@ exports.submitIdentity = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Aucun document reçu.' });
     }
 
-    await fs.mkdir(KYC_DIR, { recursive: true });
+    // Le type déclaré peut venir de l'extension : on vérifie le contenu réel
+    for (const files of Object.values(req.files)) {
+      for (const file of files) {
+        const real = sniffMime(file.buffer);
+        if (!real) {
+          return res.status(400).json({ success: false, message: 'Formats acceptés : JPG, PNG, WEBP, PDF' });
+        }
+        file.mimetype = real;
+      }
+    }
 
     const documents = [];
     for (const [kind, files] of Object.entries(req.files)) {
       for (const file of files) {
         const buffer = file.buffer;
         const sha = hashBuffer(buffer);
-        const storageKey = path.join(String(user._id), `${kind}-${sha.slice(0, 16)}${path.extname(file.originalname || '.jpg')}`);
-        const target = path.join(KYC_DIR, storageKey);
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.writeFile(target, buffer, { mode: 0o600 });   // lecture propriétaire seul
+        // « / » et non path.join : la clé sert aussi de nom d'objet Cloud Storage
+        const storageKey = `${user._id}/${kind}-${sha.slice(0, 16)}${path.extname(file.originalname || '.jpg')}`;
+        await privateStorage.save(storageKey, buffer, file.mimetype);
         documents.push({ kind, storageKey, mime: file.mimetype, sha256: sha });
       }
     }

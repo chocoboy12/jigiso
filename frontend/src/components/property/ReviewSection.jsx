@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Star, ThumbsUp, CheckCircle } from 'lucide-react';
 import { reviewAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { formatDate } from '../../utils/helpers';
+import { formatDate, resolveImageUrl } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 import { useT } from '../../context/LanguageContext';
 
@@ -162,7 +162,7 @@ export default function ReviewSection({ propertyId, ownerId }) {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   {r.reviewer?.profileImage?.url ? (
-                    <img src={r.reviewer.profileImage.url} alt=""
+                    <img src={resolveImageUrl(r.reviewer.profileImage.url)} alt=""
                       className="w-9 h-9 rounded-full object-cover" />
                   ) : (
                     <div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center">

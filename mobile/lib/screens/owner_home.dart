@@ -27,7 +27,7 @@ class _OwnerShellState extends State<OwnerShell> {
 
   Future<void> _publish() async {
     final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const AddPropertyScreen()));
-    if (ok == true) data.load();
+    if (ok == true) { data.load(); } else { data.checkDraft(); }
   }
 
   @override
@@ -65,11 +65,16 @@ class OwnerData extends ChangeNotifier {
   List<Map<String, dynamic>> requests = [];
   Map<String, dynamic> stats = {};
   Map<String, dynamic>? verification;
+  /// Une annonce commencée et pas encore envoyée (brouillon local).
+  bool draft = false;
+
+  Future<void> checkDraft() async { draft = await AddPropertyScreen.hasDraft(); notifyListeners(); }
 
   int get pending => requests.where((r) => r['status'] == 'pending').length;
 
   Future<void> load() async {
     loading = true; error = null; notifyListeners();
+    checkDraft();
     try {
       final r = await Future.wait([Api.myProperties(), Api.rentalRequests(), Api.ownerStats().catchError((_) => <String, dynamic>{}), Api.verificationStatus().catchError((_) => <String, dynamic>{})]);
       listings = r[0] as List<Property>;
@@ -129,6 +134,27 @@ class OwnerDashboard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             if (data.error != null) _errorBox(data.error!, data.load),
+            if (data.draft) ...[
+              Pressable(
+                onTap: onPublish,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: const Color(0xFFFBF6EA), borderRadius: BorderRadius.circular(20), border: Border.all(color: J.gold, width: 1.5)),
+                  child: Row(children: [
+                    Container(width: 44, height: 44, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                        child: const Icon(Icons.edit_note_rounded, color: J.gold)),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Annonce en cours', style: J.ui(15, w: FontWeight.w800)),
+                      Text('Reprenez là où vous vous êtes arrêté', style: J.ui(12, c: J.clay500)),
+                    ])),
+                    Text('Reprendre', style: J.ui(14, c: J.gold, w: FontWeight.w800)),
+                    const Icon(Icons.chevron_right_rounded, color: J.gold),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             if (!verified && !data.loading) ...[
               Pressable(
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen())),

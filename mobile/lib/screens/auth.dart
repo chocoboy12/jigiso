@@ -79,16 +79,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
            quand il ne rentre pas : la mise en page reste identique partout où
            elle tient, et reste atteignable partout ailleurs. */
         body: SafeArea(
-          child: LayoutBuilder(builder: (context, contraintes) => SingleChildScrollView(
+          /* SliverFillRemaining(hasScrollBody: false) : la colonne remplit
+             l'écran quand elle tient (le Spacer pousse le bouton en bas) et
+             défile sinon. Un simple minHeight dans un SingleChildScrollView
+             ne suffit pas : la hauteur reste non bornée et le Spacer plante
+             (« non-zero flex but incoming height constraints are unbounded »). */
+          child: CustomScrollView(
             physics: const ClampingScrollPhysics(),
-            /* La contrainte de hauteur minimale suffit : la colonne remplit
-               l'écran quand elle tient, et défile sinon. Un IntrinsicHeight
-               par-dessus n'apporterait rien — aucun enfant n'a besoin d'une
-               hauteur intrinsèque — mais imposerait une seconde passe de
-               mise en page sur tout l'arbre, logo animé compris, à chaque
-               redimensionnement (l'ouverture du clavier, par exemple). */
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: contraintes.maxHeight),
+            slivers: [SliverFillRemaining(
+              hasScrollBody: false,
               child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -161,8 +160,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
             ]),
                 ),
-            ),
-          )),
+            )],
+          ),
         ),
       );
   }

@@ -2,6 +2,8 @@ const User = require('../models/User');
 const Property = require('../models/Property');
 const RentalRequest = require('../models/RentalRequest');
 const Report = require('../models/Report');
+const Favorite = require('../models/Favorite');
+const { deleteImage } = require('../config/cloudinary');
 
 // ─── GET /api/admin/stats ─────────────────────────────────
 exports.getStats = async (req, res) => {
@@ -91,8 +93,25 @@ exports.deleteUser = async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable.' });
     if (user.role === 'admin') return res.status(400).json({ success: false, message: 'Impossible de supprimer un admin.' });
 
+    /* Les annonces d'un propriétaire supprimé restaient en ligne sans
+       personne derrière : un locataire ne pouvait plus rien en faire (la
+       demande de location plantait). On les retire avec le compte. */
+    const annonces = await Property.find({ owner: user._id }).select('images');
+    for (const a of annonces) {
+      for (const img of a.images) {
+        if (img.publicId) await deleteImage(img.publicId).catch(() => {});
+      }
+    }
+    await Favorite.deleteMany({ property: { $in: annonces.map(a => a._id) } });
+    await Property.deleteMany({ owner: user._id });
+
     await user.deleteOne();
-    res.json({ success: true, message: 'Utilisateur supprimé.' });
+    res.json({
+      success: true,
+      message: annonces.length
+        ? `Utilisateur supprimé, avec ${annonces.length} annonce${annonces.length > 1 ? 's' : ''}.`
+        : 'Utilisateur supprimé.',
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });
   }
@@ -220,8 +239,7 @@ exports.rejectPropertyWithEmail = async (req, res) => {
 /* ══════════════ Vérification d'identité des propriétaires ══════════════ */
 
 const SecurityLog = require('../models/SecurityLog');
-const path = require('path');
-const fsp = require('fs/promises');
+const privateStorage = require('../services/privateStorage');
 
 /** GET /api/admin/verifications — dossiers en attente */
 exports.getVerifications = async (req, res) => {
@@ -271,13 +289,6 @@ exports.getVerificationDocument = async (req, res) => {
     const doc = user?.ownerVerification?.documents?.find(d => d.kind === req.params.kind);
     if (!doc) return res.status(404).json({ success: false, message: 'Document introuvable.' });
 
-    const base = path.join(__dirname, '..', 'uploads', 'private', 'kyc');
-    const target = path.resolve(base, doc.storageKey);
-    // Garde-fou contre la remontée de répertoire
-    if (!target.startsWith(path.resolve(base))) {
-      return res.status(400).json({ success: false, message: 'Chemin invalide.' });
-    }
-
     await SecurityLog.record({
       event: 'kyc_document_viewed', severity: 'info',
       user: req.user._id, targetUser: user._id, ip: req.ip,
@@ -287,7 +298,8 @@ exports.getVerificationDocument = async (req, res) => {
     res.setHeader('Content-Type', doc.mime || 'application/octet-stream');
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Cache-Control', 'no-store');
-    res.send(await fsp.readFile(target));
+    // Disque local en développement, Cloud Storage en production (garde-fou « ../ » inclus)
+    res.send(await privateStorage.read(doc.storageKey));
   } catch (error) {
     res.status(500).json({ success: false, message: 'Lecture impossible.' });
   }

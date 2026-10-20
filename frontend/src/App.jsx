@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModalProvider } from './context/AuthModalContext';
 import { LanguageProvider } from './context/LanguageContext';
@@ -65,10 +65,38 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+/* ── Chaque rôle dans son espace ──────────────────────────────
+   Le site public (accueil, recherche, annonces) est celui des locataires
+   et des visiteurs. Un admin connecté reste dans l'administration, un
+   propriétaire dans son espace : les adresses publiques les y ramènent.
+   Les pages communes (demandes, messages, profil…) s'affichent alors dans
+   leur console au lieu du site public. */
+const ESPACE = {
+  admin: { accueil: '/admin', annonce: (id) => `/admin/logements/${id}`, communes: ['/profil', '/verifier-email'] },
+  owner: {
+    accueil: '/proprietaire/tableau-de-bord',
+    annonce: (id) => `/mes-annonces/${id}`,
+    communes: ['/mes-demandes', '/messages', '/profil', '/verifier-email'],
+  },
+};
+
+const PublicSpace = () => {
+  const { user, loading } = useAuth();
+  const { pathname } = useLocation();
+  if (loading) return <Spinner />;
+  const espace = ESPACE[user?.role];
+  if (!espace) return <MainLayout />;
+  if (espace.communes.some(p => pathname === p || pathname.startsWith(`${p}/`))) {
+    return <ConsoleLayout space={user.role} />;
+  }
+  const annonce = pathname.match(/^\/logements\/([^/]+)/);
+  return <Navigate to={annonce ? espace.annonce(annonce[1]) : espace.accueil} replace />;
+};
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<MainLayout />}>
+      <Route path="/" element={<PublicSpace />}>
         <Route index element={<HomePage />} />
         <Route path="rechercher" element={<SearchPage />} />
         <Route path="logements/:id" element={<PropertyDetailPage />} />
@@ -94,6 +122,8 @@ function AppRoutes() {
         <Route path="/publier" element={<AddPropertyPage />} />
         <Route path="/mes-annonces" element={<MyPropertiesPage />} />
         <Route path="/mes-annonces/:id/modifier" element={<EditPropertyPage />} />
+        {/* Aperçu de l'annonce, dans l'espace propriétaire */}
+        <Route path="/mes-annonces/:id" element={<PropertyDetailPage />} />
         <Route path="/proprietaire/tableau-de-bord" element={<OwnerDashboardPage />} />
         <Route path="/verification" element={<VerificationPage />} />
       </Route>
@@ -102,6 +132,8 @@ function AppRoutes() {
         <Route index element={<AdminDashboardPage />} />
         <Route path="utilisateurs" element={<AdminUsersPage />} />
         <Route path="logements" element={<AdminPropertiesPage />} />
+        {/* L'annonce vue depuis l'admin reste dans la console, sans passer par le site public */}
+        <Route path="logements/:id" element={<PropertyDetailPage />} />
         <Route path="signalements" element={<AdminReportsPage />} />
         <Route path="verifications" element={<AdminVerificationsPage />} />
         <Route path="statistiques" element={<AdminAnalyticsPage />} />

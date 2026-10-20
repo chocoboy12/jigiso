@@ -7,6 +7,7 @@ import LanguageSwitch from '../common/LanguageSwitch';
 import { useT } from '../../context/LanguageContext';
 import Logo from '../common/Logo';
 import toast from 'react-hot-toast';
+import { resolveImageUrl } from '../../utils/helpers';
 
 export default function Header() {
   const { user, isAuthenticated, isOwner, isAdmin, logout } = useAuth();
@@ -61,7 +62,7 @@ export default function Header() {
                   className="flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-pill border border-ink/15 hover:border-ink/40 transition-colors"
                 >
                   {user?.profileImage?.url ? (
-                    <img src={user.profileImage.url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                    <img src={resolveImageUrl(user.profileImage.url)} alt="" className="w-7 h-7 rounded-full object-cover" />
                   ) : (
                     <span className="w-7 h-7 rounded-full bg-ink text-cream flex items-center justify-center font-display font-bold text-xs">
                       {user?.name?.[0]?.toUpperCase()}

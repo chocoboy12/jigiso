@@ -40,11 +40,33 @@ class RequestSheet extends StatefulWidget {
 class _RequestSheetState extends State<RequestSheet> {
   final dates = nextMoveInDates();
   final msg = TextEditingController();
-  int? date;
+  int? date;          // index dans [dates], ou [_autre] pour une date choisie au calendrier
+  DateTime? autreDate;
+  static const _autre = -1;
   int? dur;
   bool sending = false;
 
   bool get ready => date != null && dur != null;
+  DateTime get moveIn => date == _autre ? autreDate! : dates[date!];
+
+  /// Calendrier : n'importe quel jour entre demain et dans un an.
+  Future<void> _choisirDate() async {
+    HapticFeedback.selectionClick();
+    final demain = DateTime.now().add(const Duration(days: 1));
+    final d = await showDatePicker(
+      context: context,
+      locale: Locale(AppScope.of(context).lang),
+      initialDate: autreDate ?? demain,
+      firstDate: DateTime(demain.year, demain.month, demain.day),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: AppScope.of(context).lang == 'fr' ? 'DATE D\'ENTRÉE' : 'MOVE-IN DATE',
+      builder: (c, child) => Theme(
+        data: Theme.of(c).copyWith(colorScheme: Theme.of(c).colorScheme.copyWith(primary: J.ink, onPrimary: J.cream, secondary: J.gold)),
+        child: child!,
+      ),
+    );
+    if (d != null) setState(() { autreDate = d; date = _autre; });
+  }
 
   Future<void> _send() async {
     if (!ready || sending) return;
@@ -53,11 +75,11 @@ class _RequestSheetState extends State<RequestSheet> {
     final s = AppScope.of(context);
     final nav = Navigator.of(context);
     try {
-      await s.sendRequest(RentalRequest(property: widget.p, moveIn: dates[date!], duration: durations[dur!], message: msg.text));
+      await s.sendRequest(RentalRequest(property: widget.p, moveIn: moveIn, duration: durations[dur!], message: msg.text));
     } catch (e) {
       if (!mounted) return;
       setState(() => sending = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(Api.token == null ? 'Connectez-vous pour envoyer une demande' : 'Envoi impossible : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(Api.token == null ? 'Connectez-vous pour envoyer une demande' : '$e')));
       return;
     }
     nav.pop();
@@ -90,6 +112,18 @@ class _RequestSheetState extends State<RequestSheet> {
               ]), height: 64)),
             ],
           ]),
+          const SizedBox(height: 6),
+          // Autre date : le 1er et le 15 ne conviennent pas à tout le monde
+          _tile(date == _autre, _choisirDate, Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.calendar_month_rounded, size: 18, color: date == _autre ? J.gold : J.ink),
+            const SizedBox(width: 8),
+            Text(
+              date == _autre
+                  ? '${autreDate!.day} ${_months[autreDate!.month - 1]} ${autreDate!.year} · ${s.lang == 'fr' ? 'modifier' : 'change'}'
+                  : (s.lang == 'fr' ? 'Choisir une autre date' : 'Pick another date'),
+              style: J.sans(14, c: date == _autre ? J.cream : J.ink, w: FontWeight.w600),
+            ),
+          ]), height: 44),
           const SizedBox(height: 16),
           Text(s.t('req.duration'), style: J.mono(10)),
           const SizedBox(height: 8),

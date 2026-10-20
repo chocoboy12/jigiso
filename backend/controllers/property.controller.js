@@ -422,6 +422,8 @@ exports.deleteProperty = async (req, res) => {
       if (img.publicId) await deleteImage(img.publicId);
     }
     await property.deleteOne();
+    // Les favoris pointeraient sinon vers une annonce qui n'existe plus
+    await Favorite.deleteMany({ property: property._id });
 
     // Une suppression n'était pas tracée : impossible de savoir après coup
     // qui avait retiré une annonce.

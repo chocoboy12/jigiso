@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../data/api.dart';
 import '../data/mali_locations.dart';
 import '../data/models.dart';
@@ -11,10 +14,19 @@ import '../widgets/location_picker.dart';
 import 'detail.dart' show amenityIcons;
 import '../widgets/property_card.dart' show typeIcons;
 
-/// Espace propriétaire · Publier un logement — photos puis infos & localisation.
+/// Espace propriétaire · Publier un logement — photos, infos & localisation,
+/// puis contrat de location (exigé par le serveur pour publier).
 /// Envoi : POST /properties (multipart), mêmes champs que AddPropertyPage du site.
 class AddPropertyScreen extends StatefulWidget {
   const AddPropertyScreen({super.key});
+
+  /// Vrai si une annonce commencée attend d'être reprise (voir le brouillon ci-dessous).
+  static Future<bool> hasDraft() async {
+    try {
+      return File('${(await getApplicationDocumentsDirectory()).path}/brouillon_annonce/brouillon.json').existsSync();
+    } catch (_) { return false; }
+  }
+
   @override
   State<AddPropertyScreen> createState() => _AddPropertyScreenState();
 }
@@ -32,6 +44,183 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   bool furnished = false, sending = false;
   final amen = <String, bool>{for (final k in amenityKeys) k: false};
 
+  // Contrat — mêmes champs que ContractForm du site (voir parseContract côté serveur)
+  final minDuration = TextEditingController(), notice = TextEditingController(),
+      deposit = TextEditingController(), advance = TextEditingController(), payDay = TextEditingController(),
+      obligations = TextEditingController(), termination = TextEditingController(),
+      rules = TextEditingController(), extra = TextEditingController();
+  final charges = <String>{};
+
+  // Contact affiché sur l'annonce (boutons Appeler / WhatsApp) — ce sont les
+  // numéros du profil : les modifier ici met le profil à jour à l'envoi.
+  final contactPhone = TextEditingController(), contactWhatsapp = TextEditingController();
+
+  /// « +22370000000 » → « 70 00 00 00 » ; les 8 chiffres locaux, groupés par deux.
+  static String _local(String brut) {
+    var d = brut.replaceAll(RegExp(r'\D'), '');
+    if (d.startsWith('223') && d.length > 8) d = d.substring(3);
+    return d.replaceAllMapped(RegExp(r'(\d{2})(?=\d)'), (m) => '${m[1]} ');
+  }
+  static String _digits(String brut) {
+    final d = brut.replaceAll(RegExp(r'\D'), '');
+    return d.startsWith('223') && d.length > 8 ? d.substring(3) : d;
+  }
+
+  /* ── Brouillon ─────────────────────────────────────────────
+     Tout est enregistré sur le téléphone au fil de la saisie (photos
+     comprises, recopiées dans les documents de l'app : le cache
+     d'image_picker peut être vidé par le système). Si l'écran se ferme,
+     si l'app est tuée, on reprend là où on s'était arrêté en rouvrant
+     « Publier ». Le brouillon est effacé après un envoi réussi. */
+  bool _draftReady = false;        // pas d'écriture avant la relecture : on écraserait le brouillon
+  Timer? _saveTimer;
+  Future<void> _saveChain = Future.value();
+
+  static Future<Directory> _draftDir() async {
+    final d = Directory('${(await getApplicationDocumentsDirectory()).path}/brouillon_annonce');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
+  }
+
+  List<TextEditingController> get _controllers =>
+      [title, price, area, desc, minDuration, notice, deposit, advance, payDay, obligations, termination, rules, extra, contactPhone, contactWhatsapp];
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in _controllers) { c.addListener(_scheduleSave); }
+    _restoreDraft();
+  }
+
+  // Chaque changement d'état (étape, type, photos, équipements…) déclenche une sauvegarde.
+  @override
+  void setState(VoidCallback fn) { super.setState(fn); _scheduleSave(); }
+
+  void _scheduleSave() {
+    if (!_draftReady || sending) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 600), _flushDraft);
+  }
+
+  /// Capture l'état tout de suite (synchrone), puis l'écrit à la suite des écritures précédentes.
+  void _flushDraft() {
+    if (!_draftReady) return;
+    final snap = {
+      'step': step, 'title': title.text, 'price': price.text, 'area': area.text, 'desc': desc.text,
+      'type': type, 'beds': beds, 'baths': baths, 'furnished': furnished, 'lat': lat, 'lng': lng,
+      'amen': amen, 'charges': charges.toList(),
+      'contactPhone': contactPhone.text, 'contactWhatsapp': contactWhatsapp.text,
+      'place': place == null ? null : {'kind': place!.kind, 'commune': place!.commune, 'quartier': place!.quartier,
+          'region': place!.region, 'lat': place!.lat, 'lng': place!.lng},
+      'contract': {for (final e in {
+        'minDuration': minDuration, 'notice': notice, 'deposit': deposit, 'advance': advance, 'payDay': payDay,
+        'obligations': obligations, 'termination': termination, 'rules': rules, 'extra': extra}.entries) e.key: e.value.text},
+    };
+    final paths = photos.map((f) => f.path).toList();
+    _saveChain = _saveChain.then((_) => _writeDraft(snap, paths)).catchError((_) {});
+  }
+
+  Future<void> _writeDraft(Map<String, dynamic> snap, List<String> paths) async {
+    final dir = await _draftDir();
+    final json = File('${dir.path}/brouillon.json');
+    final empty = paths.isEmpty && (snap['title'] as String).isEmpty && (snap['desc'] as String).isEmpty
+        && (snap['price'] as String).isEmpty && snap['type'] == null && snap['place'] == null;
+    if (empty) { await _clearDraft(); return; }
+
+    final kept = <String>[];
+    for (final p in paths) {
+      if (p.startsWith(dir.path)) { kept.add(p); continue; }
+      final ext = p.contains('.') ? p.substring(p.lastIndexOf('.')) : '.jpg';
+      final copy = await File(p).copy('${dir.path}/photo_${DateTime.now().microsecondsSinceEpoch}$ext');
+      kept.add(copy.path);
+      // La même image, désormais à un emplacement durable
+      final i = photos.indexWhere((f) => f.path == p);
+      if (i >= 0) photos[i] = copy;
+    }
+    await for (final e in dir.list()) {
+      if (e is File && e.path.contains('/photo_') && !kept.contains(e.path)) await e.delete();
+    }
+    snap['photos'] = kept;
+    await json.writeAsString(jsonEncode(snap));
+  }
+
+  static Future<void> _clearDraft() async {
+    try {
+      final d = Directory('${(await getApplicationDocumentsDirectory()).path}/brouillon_annonce');
+      if (await d.exists()) await d.delete(recursive: true);
+    } catch (_) {}
+  }
+
+  Future<void> _restoreDraft() async {
+    try {
+      final f = File('${(await _draftDir()).path}/brouillon.json');
+      if (await f.exists()) {
+        final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+        final c = (j['contract'] as Map?) ?? {};
+        String t(Object? v) => v is String ? v : '';
+        title.text = t(j['title']); price.text = t(j['price']); area.text = t(j['area']); desc.text = t(j['desc']);
+        minDuration.text = t(c['minDuration']); notice.text = t(c['notice']); deposit.text = t(c['deposit']);
+        advance.text = t(c['advance']); payDay.text = t(c['payDay']); obligations.text = t(c['obligations']);
+        termination.text = t(c['termination']); rules.text = t(c['rules']); extra.text = t(c['extra']);
+        contactPhone.text = t(j['contactPhone']); contactWhatsapp.text = t(j['contactWhatsapp']);
+        final pl = j['place'] as Map?;
+        if (!mounted) return;
+        super.setState(() {
+          step = (j['step'] as int? ?? 0).clamp(0, 2);
+          type = j['type'] as String?;
+          beds = j['beds'] as int? ?? 0; baths = j['baths'] as int? ?? 0;
+          furnished = j['furnished'] == true;
+          lat = (j['lat'] as num?)?.toDouble(); lng = (j['lng'] as num?)?.toDouble();
+          (j['amen'] as Map? ?? {}).forEach((k, v) { if (amen.containsKey(k)) amen[k as String] = v == true; });
+          charges..clear()..addAll(((j['charges'] as List?) ?? []).cast<String>());
+          photos..clear()..addAll(((j['photos'] as List?) ?? []).cast<String>().map(File.new).where((f) => f.existsSync()));
+          place = pl == null ? null : switch (pl['kind']) {
+            'commune' => Place.commune(pl['commune'] as String?),
+            'quartier' => Place.quartier(pl['commune'] as String?, pl['quartier'] as String?),
+            'region' => Place.region(pl['region'] as String?),
+            'gps' => Place.gps((pl['lat'] as num?)?.toDouble(), (pl['lng'] as num?)?.toDouble()),
+            _ => const Place.bamako(),
+          };
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Brouillon repris là où vous vous étiez arrêté.'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(label: 'Recommencer', onPressed: _startOver),
+        ));
+      }
+    } catch (_) {/* brouillon illisible : on repart d'un formulaire vide */}
+    _prefillContact();
+    _draftReady = true;
+  }
+
+  /// Pré-remplit le contact avec les numéros du profil s'ils n'ont pas été saisis.
+  void _prefillContact() {
+    if (!mounted) return;
+    final u = AppScope.of(context).user;
+    if (u == null) return;
+    if (contactPhone.text.isEmpty) contactPhone.text = _local(u.phone);
+    if (contactWhatsapp.text.isEmpty) contactWhatsapp.text = _local(u.whatsapp);
+  }
+
+  Future<void> _startOver() async {
+    _draftReady = false;
+    _saveTimer?.cancel();
+    await _saveChain;
+    await _clearDraft();
+    if (!mounted) return;
+    for (final c in _controllers) { c.clear(); }
+    super.setState(() {
+      step = 0; type = null; place = null; lat = null; lng = null; beds = 0; baths = 0; furnished = false;
+      photos.clear(); charges.clear(); amen.updateAll((_, __) => false);
+    });
+    _prefillContact();
+    _draftReady = true;
+  }
+  static const chargeLabels = {
+    'eau': 'Eau', 'electricite': 'Électricité', 'internet': 'Internet',
+    'ordures': 'Ramassage des ordures', 'gardiennage': 'Gardiennage', 'entretien': 'Entretien des parties communes',
+  };
+
   Future<void> _addPhotos(ImageSource src) async {
     HapticFeedback.selectionClick();
     if (src == ImageSource.gallery) {
@@ -45,12 +234,62 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   String? get _missing {
     if (photos.isEmpty) return 'Ajoutez au moins une photo';
+    return _missingInfo ?? _missingContract;
+  }
+
+  String? get _missingInfo {
     if (title.text.trim().isEmpty) return 'Ajoutez un titre';
     if (type == null) return 'Choisissez le type';
     if (place == null) return 'Choisissez la localisation';
     if ((int.tryParse(price.text.replaceAll(' ', '')) ?? 0) <= 0) return 'Indiquez le loyer';
     if (desc.text.trim().isEmpty) return 'Ajoutez une description';
+    if (_digits(contactPhone.text).length != 8) return 'Contact : numéro de téléphone à 8 chiffres';
+    final wa = _digits(contactWhatsapp.text);
+    if (wa.isNotEmpty && wa.length != 8) return 'Contact : numéro WhatsApp à 8 chiffres, ou laissez vide';
     return null;
+  }
+
+  /// Bornes identiques au serveur : sinon il refuse avec un message global.
+  String? get _missingContract {
+    int? n(TextEditingController c) => int.tryParse(c.text.trim());
+    if (minDuration.text.trim().isEmpty) return 'Contrat : indiquez la durée minimale';
+    if (notice.text.trim().isEmpty) return 'Contrat : indiquez le préavis';
+    final d = n(payDay);
+    if (d == null || d < 1 || d > 31) return 'Contrat : jour de paiement entre 1 et 31';
+    final cau = n(deposit);
+    if (cau == null || cau > 24) return 'Contrat : caution entre 0 et 24 mois';
+    final av = n(advance);
+    if (av == null || av > 24) return 'Contrat : avance entre 0 et 24 mois';
+    if (obligations.text.trim().isEmpty) return 'Contrat : rédigez les obligations des parties';
+    if (termination.text.trim().isEmpty) return 'Contrat : rédigez les conditions de résiliation';
+    return null;
+  }
+
+  Map<String, dynamic> get _contract => {
+        'minimumDuration': minDuration.text.trim(),
+        'noticePeriod': notice.text.trim(),
+        'depositMonths': int.parse(deposit.text.trim()),
+        'advanceMonths': int.parse(advance.text.trim()),
+        'paymentDay': int.parse(payDay.text.trim()),
+        'chargesIncluded': charges.toList(),
+        'obligations': obligations.text.trim(),
+        'rules': rules.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList(),
+        'terminationTerms': termination.text.trim(),
+        'extraTerms': extra.text.trim(),
+      };
+
+  void _next() {
+    if (step == 0) {
+      if (photos.isEmpty) { _addPhotos(ImageSource.gallery); return; }
+      setState(() => step = 1);
+    } else if (step == 1) {
+      final m = _missingInfo;
+      if (m != null) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m))); return; }
+      FocusScope.of(context).unfocus();
+      setState(() => step = 2);
+    } else {
+      _submit();
+    }
   }
 
   Future<void> _submit() async {
@@ -59,6 +298,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     HapticFeedback.mediumImpact();
     setState(() => sending = true);
     try {
+      // Numéros modifiés dans le formulaire → profil mis à jour avant l'annonce,
+      // pour que les boutons Appeler / WhatsApp affichent les bons.
+      final app = AppScope.of(context);
+      final u = app.user;
+      final tel = _digits(contactPhone.text), wa = _digits(contactWhatsapp.text);
+      if (u != null && (tel != _digits(u.phone) || wa != _digits(u.whatsapp))) {
+        app.updateUser(await Api.updateProfile(phone: '+223$tel', whatsapp: wa.isEmpty ? '' : '+223$wa'));
+      }
       await Api.createProperty(
         fields: {
           'title': title.text.trim(), 'type': type!, 'description': desc.text.trim(),
@@ -69,22 +316,60 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           'furnished': '$furnished',
         },
         amenities: amen,
+        contract: _contract,
         location: lat != null ? {'lat': lat!, 'lng': lng!} : null,
         photos: photos,
       );
+      _draftReady = false;
+      _saveTimer?.cancel();
+      await _saveChain;
+      await _clearDraft();
       if (!mounted) return;
       AppScope.of(context).load();
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Annonce envoyée — en attente de validation par Jigiso')));
     } catch (e) {
       if (!mounted) return;
+      _draftReady = true;
       setState(() => sending = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
     }
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  void dispose() {
+    // Dernière écriture si un enregistrement était en attente
+    if (_saveTimer?.isActive ?? false) { _saveTimer!.cancel(); _flushDraft(); }
+    for (final c in [title, price, area, desc, minDuration, notice, deposit, advance, payDay, obligations, termination, rules, extra]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Quelque chose a déjà été saisi : le perdre d'un geste serait frustrant.
+  bool get _dirty => photos.isNotEmpty || title.text.isNotEmpty || desc.text.isNotEmpty || price.text.isNotEmpty
+      || minDuration.text.isNotEmpty || obligations.text.isNotEmpty || termination.text.isNotEmpty;
+
+  /// Retour (bouton, geste ou touche Android) : étape précédente ; à la
+  /// première étape on sort, et le brouillon garde la saisie pour plus tard.
+  Future<void> _back() async {
+    if (sending) return;
+    if (step > 0) { setState(() => step--); return; }
+    final messenger = ScaffoldMessenger.of(context);
+    final saved = _dirty;
+    _saveTimer?.cancel();
+    _flushDraft();
+    Navigator.pop(context);
+    if (saved) {
+      messenger.showSnackBar(const SnackBar(content: Text('Brouillon enregistré — touchez « Publier » pour reprendre votre annonce.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); },
+      child: Scaffold(
         backgroundColor: Colors.white,
         body: SafeArea(
           child: Column(children: [
@@ -92,14 +377,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
               child: Column(children: [
                 Row(children: [
-                  IconButton(onPressed: () => step == 0 ? Navigator.pop(context) : setState(() => step = 0),
+                  IconButton(onPressed: _back,
                       icon: Icon(step == 0 ? Icons.close_rounded : Icons.arrow_back_rounded)),
                   Expanded(child: Text('Nouvelle annonce', style: J.ui(18, w: FontWeight.w800))),
-                  Text('${step + 1}/2', style: J.ui(13, c: J.leaf, w: FontWeight.w700)),
+                  Text('${step + 1}/3', style: J.ui(13, c: J.leaf, w: FontWeight.w700)),
                 ]),
                 const SizedBox(height: 10),
                 ClipRRect(borderRadius: BorderRadius.circular(3), child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: (step + 1) / 2), duration: const Duration(milliseconds: 350),
+                  tween: Tween(end: (step + 1) / 3), duration: const Duration(milliseconds: 350),
                   builder: (_, v, __) => LinearProgressIndicator(value: v, minHeight: 6, color: J.leaf, backgroundColor: const Color(0xFFE6F0EA)),
                 )),
               ]),
@@ -107,24 +392,24 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
             Expanded(child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (c, a) => FadeTransition(opacity: a, child: SlideTransition(position: Tween(begin: const Offset(.06, 0), end: Offset.zero).animate(a), child: c)),
-              child: step == 0 ? _photosStep() : _infoStep(),
+              child: step == 0 ? _photosStep() : step == 1 ? _infoStep() : _contractStep(),
             )),
           ]),
         ),
         bottomNavigationBar: SafeArea(
           minimum: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Pressable(
-            onTap: sending ? null : () => step == 0 ? (photos.isEmpty ? _addPhotos(ImageSource.gallery) : setState(() => step = 1)) : _submit(),
+            onTap: sending ? null : _next,
             child: Container(
               height: 56, alignment: Alignment.center,
               decoration: BoxDecoration(color: J.leaf, borderRadius: BorderRadius.circular(18)),
               child: sending
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                  : Text(step == 0 ? (photos.isEmpty ? 'Ajouter des photos' : 'Continuer') : 'Envoyer pour validation', style: J.ui(16, c: Colors.white, w: FontWeight.w700)),
+                  : Text(step == 0 ? (photos.isEmpty ? 'Ajouter des photos' : 'Continuer') : step == 1 ? 'Continuer · contrat' : 'Envoyer pour validation', style: J.ui(16, c: Colors.white, w: FontWeight.w700)),
             ),
           ),
         ),
-      );
+      ));
 
   Widget _photosStep() => ListView(key: const ValueKey(0), padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: [
         Text('Photos du logement', style: J.ui(24, w: FontWeight.w800)),
@@ -226,16 +511,94 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         const SizedBox(height: 16),
         _label('Description'),
         _field(desc, 'Décrivez le logement, le quartier, l\'accès…', lines: 4),
+        const SizedBox(height: 22),
+        Text('Contact', style: J.ui(16, w: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text('Les locataires vous joignent par ces numéros depuis l\'annonce (boutons Appeler et WhatsApp).',
+            style: J.ui(13, c: J.clay500, h: 1.45)),
+        const SizedBox(height: 12),
+        _label('Téléphone'),
+        _field(contactPhone, '70 00 00 00', prefix: '+223', phone: true),
+        const SizedBox(height: 12),
+        _label('WhatsApp (facultatif)'),
+        _field(contactWhatsapp, '76 00 00 00', prefix: '+223', phone: true),
+        const SizedBox(height: 8),
+        Text('Laissé vide : pas de bouton WhatsApp. Ces numéros sont aussi ceux de votre profil ; les modifier ici le met à jour.',
+            style: J.ui(12, c: J.clay500, h: 1.45)),
       ]);
+
+  /// Étape 3 — le contrat de location, présenté article par article comme sur le site.
+  Widget _contractStep() {
+    final loyer = int.tryParse(price.text.replaceAll(' ', '')) ?? 0;
+    final mois = (int.tryParse(deposit.text) ?? 0) + (int.tryParse(advance.text) ?? 0);
+    return ListView(key: const ValueKey(2), padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: [
+      Text('Contrat de location', style: J.ui(24, w: FontWeight.w800)),
+      const SizedBox(height: 4),
+      Text('Obligatoire pour publier. Le locataire voit ces conditions avant de vous écrire.',
+          style: J.ui(14, c: J.clay500, w: FontWeight.w400, h: 1.5)),
+      _article('2', 'Durée du bail'),
+      Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Durée minimale'), _field(minDuration, '12 mois')])),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Préavis'), _field(notice, '1 mois')])),
+      ]),
+      _article('3', 'Loyer, caution et avance'),
+      Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Payé le'), _field(payDay, '5', number: true, onChanged: true)])),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Caution'), _field(deposit, '2', suffix: 'mois', number: true, onChanged: true)])),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Avance'), _field(advance, '3', suffix: 'mois', number: true, onChanged: true)])),
+      ]),
+      if (loyer > 0 && mois > 0) ...[
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(color: const Color(0xFFFBF6EA), borderRadius: BorderRadius.circular(14)),
+          child: Text('À verser à l\'entrée : ${_fcfa(loyer * mois)} FCFA ($mois mois de loyer)', style: J.ui(13, w: FontWeight.w700)),
+        ),
+      ],
+      const SizedBox(height: 12),
+      _label('Charges comprises dans le loyer'),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (final e in chargeLabels.entries)
+          _chip(e.value, charges.contains(e.key) ? Icons.check_rounded : Icons.add_rounded, charges.contains(e.key),
+              () => setState(() => charges.contains(e.key) ? charges.remove(e.key) : charges.add(e.key))),
+      ]),
+      const SizedBox(height: 6),
+      Text('Ce qui n\'est pas coché reste à la charge du locataire.', style: J.ui(12, c: J.clay500)),
+      _article('4', 'Obligations des parties'),
+      _field(obligations, 'Ex. le bailleur garantit l\'accès à l\'eau et à l\'électricité et prend en charge les grosses réparations. Le locataire entretient le logement et paie à la date convenue.', lines: 5),
+      const SizedBox(height: 12),
+      _label('Règles de la maison (une par ligne, facultatif)'),
+      _field(rules, 'Pas d\'animaux\nPas de musique après 22 h', lines: 3),
+      _article('5', 'Résiliation'),
+      _field(termination, 'Ex. en cas de deux mois d\'impayés, de dégradation ou de sous-location non autorisée, le bail peut être résilié après mise en demeure de 15 jours.', lines: 4),
+      _article('6', 'Clauses particulières (facultatif)'),
+      _field(extra, 'Tout ce que les articles précédents ne couvrent pas.', lines: 3),
+      const SizedBox(height: 14),
+      Text('Modèle fourni par JIGISO, non rédigé par un juriste. Pour un bail long ou un montant important, faites-le relire par un professionnel du droit malien.',
+          style: J.ui(12, c: J.clay500, h: 1.45)),
+    ]);
+  }
+
+  Widget _article(String n, String t) => Padding(
+        padding: const EdgeInsets.only(top: 22, bottom: 10),
+        child: Text('$n. $t', style: J.ui(16, w: FontWeight.w800)),
+      );
+
+  static String _fcfa(int v) => v.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ' ');
 
   Widget _label(String t) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(t, style: J.ui(13, c: J.clay600, w: FontWeight.w600)));
 
-  Widget _field(TextEditingController c, String hint, {String? suffix, bool number = false, int lines = 1}) => Container(
+  Widget _field(TextEditingController c, String hint, {String? suffix, String? prefix, bool number = false, bool phone = false, int lines = 1, bool onChanged = false}) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(color: const Color(0xFFF8F6F1), borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
         child: Row(children: [
-          Expanded(child: TextField(controller: c, maxLines: lines, keyboardType: number ? TextInputType.number : TextInputType.text,
-              inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
+          if (prefix != null) ...[Text(prefix, style: J.ui(15, w: FontWeight.w700)), const SizedBox(width: 10)],
+          Expanded(child: TextField(controller: c, maxLines: lines, onChanged: onChanged ? (_) => setState(() {}) : null,
+              keyboardType: number ? TextInputType.number : phone ? TextInputType.phone : TextInputType.text,
+              inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : phone ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]'))] : null,
               style: J.ui(15, w: number ? FontWeight.w700 : FontWeight.w500),
               decoration: InputDecoration(border: InputBorder.none, hintText: hint, hintStyle: J.ui(15, c: J.clay300), contentPadding: const EdgeInsets.symmetric(vertical: 15)))),
           if (suffix != null) Text(suffix, style: J.ui(12, c: J.clay300, w: FontWeight.w700)),

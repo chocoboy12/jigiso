@@ -37,6 +37,33 @@ function hashBuffer(buffer) {
 }
 
 /**
+ * Type MIME d'un fichier envoyé. Certains clients (app Flutter, `fromPath`
+ * sans contentType) envoient « application/octet-stream » : on retombe alors
+ * sur l'extension. Corrige `file.mimetype` en place et le renvoie.
+ */
+const MIME_PAR_EXTENSION = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.pdf': 'application/pdf',
+};
+function uploadMime(file) {
+  if (!file.mimetype || file.mimetype === 'application/octet-stream') {
+    const ext = require('path').extname(file.originalname || '').toLowerCase();
+    file.mimetype = MIME_PAR_EXTENSION[ext] || file.mimetype;
+  }
+  return file.mimetype;
+}
+
+/** Type réel d'après les premiers octets — l'extension se falsifie, pas eux. */
+function sniffMime(buffer) {
+  const b = buffer.subarray(0, 12);
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.subarray(0, 4).toString('hex') === '89504e47') return 'image/png';
+  if (b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
+  if (b.subarray(0, 4).toString() === '%PDF') return 'application/pdf';
+  return null;
+}
+
+/**
  * Normalise un numéro malien au format +223XXXXXXXX pour pouvoir détecter
  * qu'un même numéro sert à plusieurs comptes malgré les variantes d'écriture.
  */
@@ -64,5 +91,5 @@ function validatePassword(password = '') {
 
 module.exports = {
   generateToken, generateOtp, sha256, safeEqual,
-  hashBuffer, normalizePhone, validatePassword,
+  hashBuffer, normalizePhone, validatePassword, uploadMime, sniffMime,
 };

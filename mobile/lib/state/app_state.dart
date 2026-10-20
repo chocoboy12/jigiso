@@ -12,7 +12,9 @@ class AppState extends ChangeNotifier {
   AppConfig config = const AppConfig();
   bool get mustUpdate => compareVersions(appVersion, config.minVersion) < 0;
   AppUser? user;
-  void signIn(AppUser u) { user = u; tab = 0; notifyListeners(); }
+  /// Après connexion, on recharge les annonces : la liste chargée au
+  /// lancement peut dater d'avant une validation par l'admin.
+  void signIn(AppUser u) { user = u; tab = 0; notifyListeners(); load(); }
 
   /// Remplace l'utilisateur courant sans toucher à la navigation.
   /// `signIn` ramène à l'onglet 0, ce qui est juste après une connexion mais
@@ -79,6 +81,18 @@ class AppState extends ChangeNotifier {
     }
     loading = false;
     notifyListeners();
+  }
+
+  /// Recharge la liste sans indicateur de chargement : une annonce supprimée
+  /// ou validée depuis l'admin apparaît / disparaît sans geste de l'utilisateur.
+  /// Garde la liste en place si le serveur ne répond pas.
+  Future<void> refreshProperties() async {
+    if (loading) return;
+    try {
+      properties = await Api.properties(place: place.query);
+      offline = false;
+      notifyListeners();
+    } catch (_) {/* réseau absent : on garde ce qui est affiché */}
   }
 
   bool isFav(String id) => favorites.contains(id);

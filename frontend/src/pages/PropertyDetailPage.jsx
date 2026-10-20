@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import AnimatedText from '../components/common/AnimatedText';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import {
   MapPin, Bed, Bath, Square, Heart, Phone, Mail,
   MessageSquare, Flag, ChevronLeft, ChevronRight,
@@ -11,7 +11,7 @@ import { ownerContactAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useAuthModal } from '../context/AuthModalContext';
 import {
-  formatNumber, formatDate, getMainImage, whatsAppLink,
+  formatNumber, formatDate, getMainImage, whatsAppLink, resolveImageUrl,
   PROPERTY_TYPES, AMENITIES, STATUS_LABELS, timeAgo
 } from '../utils/helpers';
 import ReviewSection from '../components/property/ReviewSection';
@@ -20,6 +20,7 @@ import Icon from '../components/common/Icon';
 import MaliFlag from '../components/common/MaliFlag';
 import toast from 'react-hot-toast';
 import { useT } from '../context/LanguageContext';
+import { useSeo } from '../hooks/useSeo';
 
 /* Logo WhatsApp. Posé ici plutôt que recopié : le tracé fait 900 caractères
    et deux copies finissent par diverger. */
@@ -81,7 +82,7 @@ function ContactOwnerModal({ property, onClose }) {
         <div className="bg-mali-night px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {property.owner?.profileImage?.url ? (
-              <img src={property.owner.profileImage.url} alt=""
+              <img src={resolveImageUrl(property.owner.profileImage.url)} alt=""
                 className="w-10 h-10 rounded-full object-cover border-2 border-primary-400" />
             ) : (
               <div className="w-10 h-10 rounded-full bg-primary-500/30 flex items-center justify-center border-2 border-primary-400">
@@ -291,7 +292,21 @@ export default function PropertyDetailPage() {
   const t = useT();
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { pathname } = useLocation();
   const { user, isAuthenticated } = useAuth();
+
+  /* Affichée dans la console admin (/admin/logements/:id), l'annonce
+     ramène à l'admin : la liste des logements, ou le tableau de bord si
+     c'est de là qu'on vient. */
+  const retourAdmin = pathname.startsWith('/admin')
+    ? (searchParams.get('depuis') === 'tableau' ? '/admin' : '/admin/logements')
+    : pathname.startsWith('/mes-annonces') ? '/mes-annonces' : null;
+  const retour = () => {
+    if (retourAdmin) return navigate(retourAdmin);
+    // navigate(-1) ne fait rien sans historique dans l'app (lien partagé, e-mail)
+    return window.history.state?.idx > 0 ? navigate(-1) : navigate('/rechercher');
+  };
   const { openAuth } = useAuthModal();
 
   const [property, setProperty] = useState(null);
@@ -313,6 +328,19 @@ export default function PropertyDetailPage() {
     propertyId: id,
   });
   const [reportForm, setReportForm] = useState({ reason: '', description: '' });
+
+  /* Ce que Google affiche pour cette annonce. Vue depuis l'admin ou
+     l'espace propriétaire, la page n'a rien à faire dans les résultats. */
+  const typeSeo = PROPERTY_TYPES.find(tp => tp.value === property?.type)?.label;
+  const lieuSeo = [property?.neighborhood, property?.city].filter(Boolean).join(', ');
+  useSeo(property ? {
+    title: `${property.title} — ${typeSeo ? `${typeSeo} à louer` : 'À louer'}${lieuSeo ? ` à ${lieuSeo}` : ''}`,
+    description: `${formatNumber(property.price)} FCFA/${property.pricePeriod || 'mois'}`
+      + `${property.bedrooms ? ` · ${property.bedrooms} chambre${property.bedrooms > 1 ? 's' : ''}` : ''}`
+      + `${lieuSeo ? ` · ${lieuSeo}` : ''}. ${property.description || ''}`,
+    image: getMainImage(property) || undefined,
+    noindex: Boolean(retourAdmin),
+  } : { noindex: Boolean(retourAdmin) });
 
   useEffect(() => {
     propertyAPI.getOne(id)
@@ -369,7 +397,7 @@ export default function PropertyDetailPage() {
   if (!property) return null;
 
   const typeInfo = PROPERTY_TYPES.find(t => t.value === property.type) || {};
-  const mainImg = property.images?.[activeImage]?.url || getMainImage(property);
+  const mainImg = resolveImageUrl(property.images?.[activeImage]?.url) || getMainImage(property);
   const activeAmenities = AMENITIES.filter(a => property.amenities?.[a.key]);
   const isOwner = user?._id === property.owner?._id;
 
@@ -387,9 +415,10 @@ export default function PropertyDetailPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       {/* Retour */}
-      <button onClick={() => navigate(-1)}
+      <button onClick={retour}
         className="flex items-center gap-2 text-gray-500 hover:text-primary-500 mb-6 transition-colors">
-        <ChevronLeft size={20} /> {t('Retour aux résultats')}
+        <ChevronLeft size={20} /> {retourAdmin === '/mes-annonces' ? t('Retour à mes annonces')
+          : retourAdmin ? t("Retour à l'admin") : t('Retour aux résultats')}
       </button>
 
       {/* ─── GALERIE ────────────────────────────────────── */}
@@ -433,7 +462,7 @@ export default function PropertyDetailPage() {
             {property.images.map((img, i) => (
               <button key={i} onClick={() => setActiveImage(i)}
                 className={`flex-shrink-0 w-20 h-16 rounded-xl overflow-hidden border-2 transition-all ${i === activeImage ? 'border-primary-500' : 'border-gray-200 opacity-70'}`}>
-                <img src={img.url} alt="" className="w-full h-full object-cover" />
+                <img src={resolveImageUrl(img.url)} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>
@@ -558,7 +587,7 @@ export default function PropertyDetailPage() {
             {/* Profil propriétaire */}
             <div className="flex items-center gap-3 mb-5">
               {property.owner?.profileImage?.url ? (
-                <img src={property.owner.profileImage.url} alt={property.owner.name}
+                <img src={resolveImageUrl(property.owner.profileImage.url)} alt={property.owner.name}
                   className="w-14 h-14 rounded-full object-cover border-2 border-primary-200" />
               ) : (
                 <div className="w-14 h-14 rounded-full bg-primary-100 flex items-center justify-center border-2 border-primary-200">

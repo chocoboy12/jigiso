@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { Send, MessageSquare, Search, ArrowLeft, Phone, Mail } from 'lucide-react';
 import { messageAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { timeAgo } from '../utils/helpers';
+import { timeAgo, resolveImageUrl } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
 export default function MessagesPage() {
@@ -160,7 +160,7 @@ export default function MessagesPage() {
                     className={`w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left ${isActive ? 'bg-primary-50 border-l-2 border-l-primary-500' : ''}`}>
                     {/* Avatar */}
                     {conv.user?.profileImage?.url ? (
-                      <img src={conv.user.profileImage.url} alt=""
+                      <img src={resolveImageUrl(conv.user.profileImage.url)} alt=""
                         className="w-11 h-11 rounded-full object-cover flex-shrink-0" />
                     ) : (
                       <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
@@ -206,7 +206,7 @@ export default function MessagesPage() {
                   <ArrowLeft size={20} />
                 </button>
                 {activeConv.user?.profileImage?.url ? (
-                  <img src={activeConv.user.profileImage.url} alt=""
+                  <img src={resolveImageUrl(activeConv.user.profileImage.url)} alt=""
                     className="w-9 h-9 rounded-full object-cover" />
                 ) : (
                   <div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center">

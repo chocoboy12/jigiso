@@ -30,6 +30,10 @@ exports.createRequest = async (req, res) => {
   try {
     const property = await Property.findById(req.body.propertyId).populate('owner', 'name email');
     if (!property) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    // Compte du propriétaire supprimé : l'annonce n'a plus personne à qui répondre
+    if (!property.owner) {
+      return res.status(410).json({ success: false, message: "Ce logement n'est plus disponible : son propriétaire a quitté JIGISO." });
+    }
 
     if (property.owner._id.toString() === req.user._id.toString()) {
       return res.status(400).json({ success: false, message: 'Vous ne pouvez pas réserver votre propre logement.' });
@@ -50,7 +54,18 @@ exports.createRequest = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Vous avez déjà une demande en cours pour ce logement.' });
     }
 
-    const { tenantName, tenantPhone, tenantEmail, moveInDate, duration, message } = req.body;
+    /* L'app mobile n'envoie pas les coordonnées du locataire : on les prend
+       sur son compte, sinon le propriétaire recevait « undefined ». */
+    const { moveInDate, duration, message } = req.body;
+    const tenantName = req.body.tenantName || req.user.name;
+    const tenantPhone = req.body.tenantPhone || req.user.phone;
+    const tenantEmail = req.body.tenantEmail || req.user.email;
+
+    const entree = new Date(moveInDate);
+    const aujourdHui = new Date(); aujourdHui.setHours(0, 0, 0, 0);
+    if (Number.isNaN(entree.getTime()) || entree < aujourdHui) {
+      return res.status(400).json({ success: false, message: "Choisissez une date d'entrée à venir." });
+    }
 
     const request = await RentalRequest.create({
       tenant: req.user._id,

@@ -9,6 +9,8 @@ import AnimatedText from '../components/common/AnimatedText';
 import Lightbox from '../components/common/Lightbox';
 import { PROPERTY_TYPES, formatNumber } from '../utils/helpers';
 import { useT } from '../context/LanguageContext';
+import { useRetourOnglet } from '../hooks/useRetourOnglet';
+import { useSeo } from '../hooks/useSeo';
 
 /* Bornes du curseur de budget du hero */
 const BUDGET_MAX = 800000;
@@ -111,6 +113,7 @@ function Counter({ value, format = (v) => v, className = '' }) {
 }
 
 export default function HomePage() {
+  useSeo();   // titre et description par défaut, ceux de la page d'accueil
   const navigate = useNavigate();
   const { openAuth } = useAuthModal();
 
@@ -162,13 +165,18 @@ export default function HomePage() {
     propertyAPI.getStats().then(({ data }) => { setStats(data.stats); setReviewStats(data.stats.reviews); }).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    propertyAPI.getAll(activeType ? { limit: 6, type: activeType } : { limit: 6, sort: 'newest' })
+  const chargerAnnonces = (silencieux = false) => {
+    if (!silencieux) setLoading(true);
+    return propertyAPI.getAll(activeType ? { limit: 6, type: activeType } : { limit: 6, sort: 'newest' })
       .then(({ data }) => setProperties(data.properties || []))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [activeType]);
+  };
+
+  useEffect(() => { chargerAnnonces(); }, [activeType]);
+
+  // Retour sur l'onglet : annonces supprimées ou validées entre-temps
+  useRetourOnglet(() => chargerAnnonces(true));
 
   /* Aperçu en direct : à chaque changement de critère, on interroge l'API
      après une courte pause pour ne pas envoyer une requête par frappe. */

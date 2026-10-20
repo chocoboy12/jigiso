@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { adminAPI, rentalAPI, verificationAPI } from '../../services/api';
 import Icon from '../common/Icon';
 import toast from 'react-hot-toast';
+import { resolveImageUrl } from '../../utils/helpers';
 
 /**
  * Coque des espaces de travail (propriétaire et administration) :
@@ -19,6 +20,8 @@ const NAV = {
     { to: '/mes-demandes',                 label: 'Demandes',        icon: 'comment', badge: 'requests' },
     { to: '/publier',                      label: 'Nouvelle annonce', icon: 'add' },
     { to: '/verification',                 label: 'Vérification',    icon: 'shield-check', badge: 'verification' },
+    { to: '/messages',                     label: 'Messages',        icon: 'comment' },
+    { to: '/profil',                       label: 'Profil',          icon: 'user' },
   ],
   admin: [
     { to: '/admin',                label: 'Modération',   icon: 'shield-check', end: true, badge: 'pending' },
@@ -28,16 +31,27 @@ const NAV = {
     { to: '/admin/verifications',  label: 'Identités',    icon: 'id-badge', badge: 'kyc' },
     { to: '/admin/utilisateurs',   label: 'Comptes',      icon: 'users-alt' },
     { to: '/admin/application',    label: 'Application mobile', icon: 'mobile-notch' },
+    { to: '/profil',               label: 'Profil',       icon: 'user' },
   ],
 };
 
 const SPACE_LABEL = { owner: 'Espace propriétaire', admin: 'Administration' };
+/* Le logo ramène à l'accueil de l'espace, pas au site public */
+const SPACE_HOME = { owner: '/proprietaire/tableau-de-bord', admin: '/admin' };
 
 export default function ConsoleLayout({ space = 'owner' }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [counts, setCounts] = useState({});
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  /* Espaces privés : jamais dans les résultats de Google */
+  useEffect(() => {
+    let el = document.head.querySelector('meta[name="robots"]');
+    if (!el) { el = document.createElement('meta'); el.name = 'robots'; document.head.appendChild(el); }
+    el.content = 'noindex, nofollow';
+    return () => { el.content = 'index, follow'; };
+  }, []);
 
   /* Compteurs des pastilles — chiffres réels */
   useEffect(() => {
@@ -82,7 +96,7 @@ export default function ConsoleLayout({ space = 'owner' }) {
     <>
       {/* Marque */}
       <div className="px-5 pt-6">
-        <Link to="/" className="flex items-center gap-3">
+        <Link to={SPACE_HOME[space]} className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-[11px] bg-gold flex items-center justify-center shrink-0">
             <span className="font-display font-extrabold text-ink text-[17px]">J</span>
           </span>
@@ -116,7 +130,7 @@ export default function ConsoleLayout({ space = 'owner' }) {
       <div className="px-5 py-5 border-t border-cream/10">
         <div className="flex items-center gap-3">
           {user?.profileImage?.url ? (
-            <img src={user.profileImage.url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+            <img src={resolveImageUrl(user.profileImage.url)} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
           ) : (
             <span className="w-10 h-10 rounded-full bg-terracotta flex items-center justify-center shrink-0
                              font-display font-bold text-cream text-[13px]">
@@ -149,7 +163,7 @@ export default function ConsoleLayout({ space = 'owner' }) {
 
       {/* Barre mobile */}
       <div className="lg:hidden sticky top-0 z-30 bg-ink flex items-center justify-between px-4 h-16">
-        <Link to="/" className="flex items-center gap-2.5">
+        <Link to={SPACE_HOME[space]} className="flex items-center gap-2.5">
           <span className="w-8 h-8 rounded-[10px] bg-gold flex items-center justify-center">
             <span className="font-display font-extrabold text-ink text-[15px]">J</span>
           </span>

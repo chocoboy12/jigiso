@@ -9,6 +9,8 @@ import { useAuthModal } from '../context/AuthModalContext';
 import { PROPERTY_TYPES, formatNumber } from '../utils/helpers';
 import { useT } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
+import { useRetourOnglet } from '../hooks/useRetourOnglet';
+import { useSeo } from '../hooks/useSeo';
 
 /* Plafond du curseur de budget : au-delà, on ne filtre plus sur le prix */
 const BUDGET_MAX = 800000;
@@ -28,6 +30,13 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+
+  const villeSeo = searchParams.get('city');
+  useSeo({
+    title: `Logements à louer ${villeSeo ? `à ${villeSeo}` : 'au Mali'}`,
+    description: `Maisons, appartements, studios et villas à louer ${villeSeo ? `à ${villeSeo}` : 'au Mali'}, `
+      + 'en direct avec les propriétaires, sans commission. Annonces vérifiées par JIGISO.',
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [cities, setCities] = useState([]);
   const [stats, setStats] = useState(null);
@@ -55,8 +64,11 @@ export default function SearchPage() {
 
   useEffect(() => { fetchProperties(); }, [filters]);
 
-  const fetchProperties = async () => {
-    setLoading(true);
+  // Retour sur l'onglet : annonces supprimées ou validées entre-temps
+  useRetourOnglet(() => fetchProperties(true));
+
+  const fetchProperties = async (silencieux = false) => {
+    if (!silencieux) setLoading(true);
     try {
       const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''));
       const { data } = await propertyAPI.getAll(params);

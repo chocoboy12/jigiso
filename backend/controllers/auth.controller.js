@@ -109,6 +109,12 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error('[inscription]', error.message);
+    // Champ refusé par le modèle (e-mail mal formé, nom trop long…) : c'est
+    // une erreur de saisie, on renvoie le motif lisible plutôt qu'un 500.
+    if (error.name === 'ValidationError') {
+      const message = Object.values(error.errors).map(e => e.message).join(' · ');
+      return res.status(400).json({ success: false, message });
+    }
     res.status(500).json({ success: false, message: 'Création du compte impossible.' });
   }
 };

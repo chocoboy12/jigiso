@@ -8,6 +8,33 @@
     <meta name="description" content="JIGISO — Votre prochaine adresse au Mali, sans intermédiaire. Maisons, appartements, studios et villas, en direct avec les propriétaires." />
     <meta name="theme-color" content="#17150F" />
     <title>JIGISO — Location immobilière au Mali</title>
+    <meta name="robots" content="index, follow" />
+    <!-- Aperçu du lien partagé (WhatsApp, Facebook…) et résultats Google.
+         %VITE_SITE_URL% est remplacé à la construction (voir deploy-site.sh). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="JIGISO" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:title" content="JIGISO — Location immobilière au Mali" />
+    <meta property="og:description" content="Maisons, appartements, studios et villas à louer au Mali, en direct avec les propriétaires, sans commission." />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:image" content="%VITE_SITE_URL%/logo-lockup.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "JIGISO",
+        "alternateName": "JIGISO Mali",
+        "url": "%VITE_SITE_URL%/",
+        "inLanguage": "fr",
+        "description": "Location de maisons, appartements, studios et villas au Mali, en direct avec les propriétaires, sans commission.",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "%VITE_SITE_URL%/rechercher?city={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      }
+    </script>
     <!-- Google Fonts — Source Serif 4 (titres), Inter (interface), DM Mono (micro-libellés) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

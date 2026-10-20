@@ -170,7 +170,7 @@ export default function AdminDashboardPage() {
                                  font-semibold hover:bg-terracotta/[.06] transition-colors disabled:opacity-50">
                       Refuser
                     </button>
-                    <Link to={`/logements/${p._id}`} target="_blank"
+                    <Link to={`/admin/logements/${p._id}?depuis=tableau`}
                       className="px-5 py-2.5 rounded-lg border border-ink/15 text-ink text-[13.5px]
                                  font-semibold hover:border-ink/40 transition-colors">
                       Voir

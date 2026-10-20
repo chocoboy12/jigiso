@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'models.dart';
 
 /// Erreur renvoyée par l'API, avec le message exact du serveur.
@@ -27,6 +28,20 @@ class Api {
   static String get origin => base.replaceAll(RegExp(r'/api/?$'), '');
   static String? token;
 
+  /// Fichier multipart avec son type MIME réel. Sans lui, `fromPath` envoie
+  /// « application/octet-stream » et le serveur (filtre multer) refuse l'image.
+  static Future<http.MultipartFile> _image(String field, File f) {
+    final ext = f.path.split('.').last.toLowerCase();
+    final type = switch (ext) {
+      'png' => MediaType('image', 'png'),
+      'webp' => MediaType('image', 'webp'),
+      'heic' || 'heif' => MediaType('image', 'heic'),
+      'pdf' => MediaType('application', 'pdf'),
+      _ => MediaType('image', 'jpeg'),
+    };
+    return http.MultipartFile.fromPath(field, f.path, contentType: type);
+  }
+
   static Map<String, String> get _h => {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
@@ -34,11 +49,15 @@ class Api {
 
   /// Même logique que resolveImageUrl() du site : chemins relatifs et
   /// URLs « localhost » repointés vers l'API réellement configurée.
+  static final _hoteLocal = RegExp(r'^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)');
+
   static String resolve(String url) {
     if (url.isEmpty) return url;
     if (url.startsWith('http')) {
       final u = Uri.tryParse(url);
-      if (u != null && (u.host == 'localhost' || u.host == '127.0.0.1')) return '$origin${u.path}';
+      // Adresse de l'appareil qui a publié (localhost, 10.0.2.2 de l'émulateur,
+      // réseau local) : on repointe vers l'API que cette app connaît.
+      if (u != null && u.path.startsWith('/uploads/') && _hoteLocal.hasMatch(u.host)) return '$origin${u.path}';
       return url;
     }
     return '$origin${url.startsWith('/') ? '' : '/'}$url';
@@ -210,7 +229,7 @@ class Api {
     if (phone != null) req.fields['phone'] = phone;
     // Chaîne vide volontairement transmise : c'est ainsi qu'on retire le numéro.
     if (whatsapp != null) req.fields['whatsapp'] = whatsapp;
-    if (photo != null) req.files.add(await http.MultipartFile.fromPath('profileImage', photo.path));
+    if (photo != null) req.files.add(await _image('profileImage', photo));
     final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 60)));
     if (r.statusCode >= 300) throw _erreurServeur(r);
     return AppUser.fromJson(jsonDecode(r.body)['user'] as Map<String, dynamic>, resolve);
@@ -238,16 +257,16 @@ class Api {
     final kyc = http.MultipartRequest('POST', Uri.parse('$base/verification/identity'))
       ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token'})
       ..fields['docType'] = docType
-      ..files.add(await http.MultipartFile.fromPath('id_front', front.path))
-      ..files.add(await http.MultipartFile.fromPath('selfie', selfie.path));
-    if (back != null) kyc.files.add(await http.MultipartFile.fromPath('id_back', back.path));
-    final r1 = await kyc.send().timeout(const Duration(seconds: 30));
-    if (r1.statusCode >= 300) throw Exception('HTTP ${r1.statusCode}');
+      ..files.add(await _image('id_front', front))
+      ..files.add(await _image('selfie', selfie));
+    if (back != null) kyc.files.add(await _image('id_back', back));
+    final r1 = await http.Response.fromStream(await kyc.send().timeout(const Duration(seconds: 60)));
+    if (r1.statusCode >= 300) throw _erreurServeur(r1);
 
     final photo = http.MultipartRequest('PUT', Uri.parse('$base/users/profile'))
       ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token'})
-      ..files.add(await http.MultipartFile.fromPath('profileImage', profilePhoto.path));
-    await photo.send().timeout(const Duration(seconds: 30));
+      ..files.add(await _image('profileImage', profilePhoto));
+    await photo.send().timeout(const Duration(seconds: 60));
   }
 
   // ─── Espace propriétaire ───────────────────────────────
@@ -286,20 +305,16 @@ class Api {
   }
 
   /// Publier un logement — mêmes champs que AddPropertyPage (amenities et location en JSON, photos dans « images »)
-  static Future<void> createProperty({required Map<String, String> fields, required Map<String, bool> amenities, Map<String, double>? location, required List<File> photos}) async {
+  static Future<void> createProperty({required Map<String, String> fields, required Map<String, bool> amenities, Map<String, double>? location, required Map<String, dynamic> contract, required List<File> photos}) async {
     final req = http.MultipartRequest('POST', Uri.parse('$base/properties'))
       ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token'})
       ..fields.addAll(fields)
-      ..fields['amenities'] = jsonEncode(amenities);
+      ..fields['amenities'] = jsonEncode(amenities)
+      ..fields['contract'] = jsonEncode(contract);
     if (location != null) req.fields['location'] = jsonEncode(location);
-    for (final f in photos) { req.files.add(await http.MultipartFile.fromPath('images', f.path)); }
-    final r = await req.send().timeout(const Duration(seconds: 60));
-    if (r.statusCode >= 300) {
-      final body = await r.stream.bytesToString();
-      String msg = 'HTTP ${r.statusCode}';
-      try { msg = jsonDecode(body)['message'] ?? msg; } catch (_) {}
-      throw Exception(msg);
-    }
+    for (final f in photos) { req.files.add(await _image('images', f)); }
+    final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 60)));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
   }
 
   static Future<void> setFavorite(String id, bool add) async {
@@ -316,6 +331,6 @@ class Api {
       'duration': q.duration,
       'message': q.message,
     })).timeout(const Duration(seconds: 8));
-    if (r.statusCode >= 300) throw Exception('HTTP ${r.statusCode}');
+    if (r.statusCode >= 300) throw _erreurServeur(r);
   }
 }

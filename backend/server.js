@@ -24,6 +24,9 @@ app.use(helmet({
 /* ── CORS restreint aux origines connues ────────────────── */
 const allowedOrigins = [
   process.env.CLIENT_URL,
+  // Autres adresses du site en production, séparées par des virgules
+  // (Firebase sert le même site sur …web.app et …firebaseapp.com).
+  ...(process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()),
   'http://localhost:5173',
   'http://localhost:3000',
   // Application mobile (Capacitor) : la page embarquée n'est pas servie par

@@ -4,6 +4,7 @@ const router = express.Router();
 const ctrl = require('../controllers/verification.controller');
 const { protect } = require('../middleware/auth');
 const { uploadLimiter, writeLimiter } = require('../middleware/rateLimit');
+const { uploadMime } = require('../utils/security');
 
 /**
  * Les pièces d'identité transitent en mémoire puis sont écrites dans
@@ -15,7 +16,7 @@ const kycUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 3 },
   fileFilter: (req, file, cb) => {
     const ok = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!ok.includes(file.mimetype)) {
+    if (!ok.includes(uploadMime(file))) {
       return cb(new Error('Formats acceptés : JPG, PNG, WEBP, PDF'), false);
     }
     cb(null, true);

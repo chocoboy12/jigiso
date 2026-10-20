@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Eye, CheckCircle, XCircle, Trash2, Home } from 'lucide-react';
 import Icon from '../../components/common/Icon';
-import { adminAPI } from '../../services/api';
+import { adminAPI, propertyAPI } from '../../services/api';
 import { formatNumber, STATUS_LABELS, getMainImage, formatDate } from '../../utils/helpers';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -41,6 +41,16 @@ export default function AdminPropertiesPage() {
       setProperties(p => p.map(pr => pr._id === id ? { ...pr, status: 'rejected' } : pr));
       toast.success('Annonce refusée');
     } catch { toast.error('Erreur'); }
+  };
+
+  const handleDelete = async (p) => {
+    if (!confirm(`Supprimer définitivement l'annonce « ${p.title} » ?\nSes photos seront effacées. Cette action est irréversible.`)) return;
+    try {
+      await propertyAPI.delete(p._id);
+      setProperties(list => list.filter(pr => pr._id !== p._id));
+      setTotal(t => t - 1);
+      toast.success('Annonce supprimée');
+    } catch (err) { toast.error(err.response?.data?.message || 'Suppression impossible'); }
   };
 
   const statusButtons = [
@@ -112,7 +122,7 @@ export default function AdminPropertiesPage() {
                       <td className="px-4 py-4 text-xs text-gray-500">{formatDate(p.createdAt)}</td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-1.5">
-                          <Link to={`/logements/${p._id}`} target="_blank"
+                          <Link to={`/admin/logements/${p._id}`}
                             className="p-1.5 text-gray-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg transition-colors">
                             <Eye size={15} />
                           </Link>
@@ -128,6 +138,11 @@ export default function AdminPropertiesPage() {
                               </button>
                             </>
                           )}
+                          <button onClick={() => handleDelete(p)} title="Supprimer l'annonce"
+                            aria-label={`Supprimer l'annonce « ${p.title} »`}
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>

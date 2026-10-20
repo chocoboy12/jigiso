@@ -1,0 +1,63 @@
+# API JIGISO sur Render.com — offre gratuite, sans carte bancaire.
+# Render lit ce fichier quand on crée un « Blueprint » depuis le dépôt GitHub.
+# Les valeurs marquées « sync: false » sont demandées dans le tableau de bord
+# Render au premier déploiement : elles ne sont jamais écrites ici.
+services:
+  - type: web
+    name: jigiso-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Disque effacé à chaque redémarrage : pièces d'identité dans la base (GridFS)
+      - key: PRIVATE_STORAGE
+        value: mongo
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # Adresse du site Firebase (à adapter si le projet change)
+      - key: CLIENT_URL
+        value: https://imobilier-18139.web.app
+      - key: ALLOWED_ORIGINS
+        value: https://imobilier-18139.firebaseapp.com
+      # MongoDB Atlas : mongodb+srv://…/malirent
+      - key: MONGODB_URI
+        sync: false
+      # Photos : obligatoire, le disque de Render ne garde rien
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # E-mails (Gmail : mot de passe d'application)
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_NOTIFICATION_EMAIL
+        sync: false
+      # Assistant MaliBot (facultatif : laissez vide pour le désactiver)
+      - key: ANTHROPIC_API_KEY
+        sync: false

@@ -1,6 +1,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const cloudinary = require('cloudinary').v2;
+const { uploadMime } = require('../utils/security');
 
 /**
  * Nom de fichier sûr pour le web : on jette le nom d'origine (il contient
@@ -63,7 +64,7 @@ const uploadPropertyImages = multer({
   storage: propertyStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
+    if (uploadMime(file).startsWith('image/')) cb(null, true);
     else cb(new Error('Images only'), false);
   },
 }).array('images', 10);
@@ -72,7 +73,7 @@ const uploadProfileImage = multer({
   storage: profileStorage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
+    if (uploadMime(file).startsWith('image/')) cb(null, true);
     else cb(new Error('Images only'), false);
   },
 }).single('profileImage');
@@ -91,11 +92,17 @@ const deleteImage = async (publicId) => {
  * sur l'origine du front et obtient un 404. On renvoie donc une URL
  * absolue vers l'API.
  */
+/* Sans API_PUBLIC_URL, on stocke un chemin relatif. L'hôte de la requête
+   dépend de l'appareil qui envoie : depuis l'émulateur Android c'est
+   « 10.0.2.2 », adresse que seul l'émulateur comprend — un navigateur ne
+   chargeait jamais ces photos. Chaque client préfixe le chemin par l'adresse
+   de l'API qu'il connaît. */
 const publicUrl = (file, req, folder = 'properties') => {
   if (hasCloudinary) return file.path;
-  const base = process.env.API_PUBLIC_URL
-    || (req ? `${req.protocol}://${req.get('host')}` : `http://localhost:${process.env.PORT || 5000}`);
-  return `${base.replace(/\/$/, '')}/uploads/${folder}/${file.filename}`;
+  const path = `/uploads/${folder}/${file.filename}`;
+  return process.env.API_PUBLIC_URL
+    ? `${process.env.API_PUBLIC_URL.replace(/\/$/, '')}${path}`
+    : path;
 };
 
 module.exports = { cloudinary, uploadPropertyImages, uploadProfileImage, deleteImage, publicUrl, hasCloudinary };

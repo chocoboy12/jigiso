@@ -1,0 +1,7 @@
+# Jamais dans l'image : secrets, fichiers des utilisateurs, dépendances locales
+node_modules
+.env
+.env.*
+uploads
+npm-debug.log
+.DS_Store

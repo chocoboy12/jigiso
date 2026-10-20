@@ -179,6 +179,8 @@ export const EN = {
   'Erreur, réessayez': 'Something went wrong, try again',
   'Contacter': 'Contact',
   'Retour aux résultats': 'Back to results',
+  "Retour à l'admin": 'Back to admin',
+  'Retour à mes annonces': 'Back to my listings',
   'Description': 'Description',
   'Équipements': 'Amenities',
   'Localisation': 'Location',
