@@ -21,6 +21,8 @@ import MaliFlag from '../components/common/MaliFlag';
 import toast from 'react-hot-toast';
 import { useT } from '../context/LanguageContext';
 import { useSeo } from '../hooks/useSeo';
+import CoverflowCarousel from '../components/common/CoverflowCarousel';
+import Lightbox from '../components/common/Lightbox';
 
 /* Logo WhatsApp. Posé ici plutôt que recopié : le tracé fait 900 caractères
    et deux copies finissent par diverger. */
@@ -312,7 +314,7 @@ export default function PropertyDetailPage() {
   const [property, setProperty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isFav, setIsFav] = useState(false);
-  const [activeImage, setActiveImage] = useState(0);
+  const [activeImage, setActiveImage] = useState(null);   // photo ouverte en plein écran
   const [showContactModal, setShowContactModal] = useState(false);
   const [showRentalForm, setShowRentalForm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -397,7 +399,12 @@ export default function PropertyDetailPage() {
   if (!property) return null;
 
   const typeInfo = PROPERTY_TYPES.find(t => t.value === property.type) || {};
-  const mainImg = resolveImageUrl(property.images?.[activeImage]?.url) || getMainImage(property);
+  const mainImg = getMainImage(property);
+  // Photo principale en premier, comme sur les cartes d'annonce
+  const photosAnnonce = [...(property.images || [])]
+    .sort((x, y) => (y.isMain ? 1 : 0) - (x.isMain ? 1 : 0))
+    .map((img, i) => ({ key: img._id || i, url: resolveImageUrl(img.url) }))
+    .filter(p => p.url);
   const activeAmenities = AMENITIES.filter(a => property.amenities?.[a.key]);
   const isOwner = user?._id === property.owner?._id;
 
@@ -422,32 +429,9 @@ export default function PropertyDetailPage() {
       </button>
 
       {/* ─── GALERIE ────────────────────────────────────── */}
-      <div className="mb-8">
-        <div className="relative rounded-2xl overflow-hidden aspect-video max-h-[500px] bg-gray-100 mb-3">
-          <img src={mainImg} alt={property.title}
-            className="w-full h-full object-cover"
-            onError={e => { e.currentTarget.style.visibility = 'hidden'; }} />
-
-          {property.images?.length > 1 && (
-            <>
-              <button onClick={() => setActiveImage(p => (p - 1 + property.images.length) % property.images.length)}
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg hover:bg-white transition-colors">
-                <ChevronLeft size={20} />
-              </button>
-              <button onClick={() => setActiveImage(p => (p + 1) % property.images.length)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 rounded-full flex items-center justify-center shadow-lg hover:bg-white transition-colors">
-                <ChevronRight size={20} />
-              </button>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5">
-                {property.images.map((_, i) => (
-                  <button key={i} onClick={() => setActiveImage(i)}
-                    className={`h-2 rounded-full transition-all ${i === activeImage ? 'bg-white w-5' : 'bg-white/50 w-2'}`} />
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="absolute top-4 left-4 flex gap-2">
+      {(() => {
+        const badges = (
+          <div className="absolute top-4 left-4 z-30 flex gap-2">
             <span className="flex items-center gap-1.5 bg-white/90 backdrop-blur-sm text-gray-700 text-sm font-semibold px-3 py-1.5 rounded-full">
               <Icon name={typeInfo.icon || 'home'} size={13} className="text-primary-500" /> {t(typeInfo.label)}
             </span>
@@ -455,19 +439,32 @@ export default function PropertyDetailPage() {
               <span className="bg-primary-500 text-white text-sm font-semibold px-3 py-1.5 rounded-full">{t('Meublé')}</span>
             )}
           </div>
-        </div>
+        );
 
-        {property.images?.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {property.images.map((img, i) => (
-              <button key={i} onClick={() => setActiveImage(i)}
-                className={`flex-shrink-0 w-20 h-16 rounded-xl overflow-hidden border-2 transition-all ${i === activeImage ? 'border-primary-500' : 'border-gray-200 opacity-70'}`}>
-                <img src={resolveImageUrl(img.url)} alt="" className="w-full h-full object-cover" />
-              </button>
-            ))}
+        // Plusieurs photos : carrousel en perspective, comme sur l'accueil
+        if (photosAnnonce.length > 1) return (
+          <div className="relative mb-8 rounded-2xl bg-ink pt-14 pb-8 overflow-hidden">
+            {badges}
+            <CoverflowCarousel items={photosAnnonce} onOpen={setActiveImage} actionLabel={t('Agrandir la photo')} />
           </div>
-        )}
-      </div>
+        );
+
+        return (
+          <div className="relative mb-8 rounded-2xl overflow-hidden aspect-video max-h-[500px] bg-gray-100">
+            <button type="button" onClick={() => mainImg && setActiveImage(0)} aria-label={t('Agrandir la photo')}
+              className="w-full h-full cursor-zoom-in">
+              <img src={mainImg} alt={property.title}
+                className="w-full h-full object-cover"
+                onError={e => { e.currentTarget.style.visibility = 'hidden'; }} />
+            </button>
+            {badges}
+          </div>
+        );
+      })()}
+
+      {/* Plein écran ; activeImage vaut null tant qu'aucune photo n'est ouverte */}
+      <Lightbox photos={photosAnnonce} index={activeImage}
+        onClose={() => setActiveImage(null)} onNavigate={setActiveImage} />
 
       {/* ─── CONTENU ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

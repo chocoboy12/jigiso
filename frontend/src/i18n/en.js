@@ -96,6 +96,8 @@ export const EN = {
 
   'Territoire': 'Coverage',
   'Le pays': 'The country',
+  'Voir la photo': 'View photo',
+  'Agrandir la photo': 'Enlarge photo',
   'Dix villes, un seul réseau': 'Ten cities, one network',
 
   'Confiance': 'Trust',

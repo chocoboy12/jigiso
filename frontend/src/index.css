@@ -344,3 +344,9 @@
    repartir. On le fige donc au moment où l'écran commence à s'effacer, pour
    que personne ne voie le logo se défaire pendant le fondu. */
 .splash-fige, .splash-fige * { animation-play-state: paused !important; }
+
+/* Légende du carrousel en perspective : monte et apparaît */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}

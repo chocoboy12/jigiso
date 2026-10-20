@@ -11,6 +11,7 @@ import { PROPERTY_TYPES, formatNumber } from '../utils/helpers';
 import { useT } from '../context/LanguageContext';
 import { useRetourOnglet } from '../hooks/useRetourOnglet';
 import { useSeo } from '../hooks/useSeo';
+import CoverflowCarousel from '../components/common/CoverflowCarousel';
 
 /* Bornes du curseur de budget du hero */
 const BUDGET_MAX = 800000;
@@ -732,70 +733,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ══════════ BANDEAU ÉDITORIAL ══════════ */}
-      {showcase.length >= 4 && (
-        <section className="max-w-[1280px] mx-auto px-5 sm:px-7 pb-20">
-          <Reveal>
-            <div className="relative overflow-hidden rounded-panel bg-ink">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-cream/10">
-                {showcase.slice(0, 4).map((photo, i) => (
-                  <figure key={photo.key} className="relative group bg-ink aspect-[4/5] overflow-hidden">
-                    {/* La vignette s'ouvre en plein écran : la légende et le
-                        crédit y sont lisibles, et toute la série se parcourt. */}
-                    <button type="button" onClick={() => setLightbox(i)}
-                      aria-label={`Agrandir : ${photo.caption || 'photo'}`}
-                      className="absolute inset-0 w-full h-full cursor-zoom-in
-                                 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-inset">
-                      <img src={photo.url} alt={photo.caption} loading="lazy" decoding="async"
-                        className="w-full h-full object-cover opacity-80
-                                   group-hover:opacity-100 group-hover:scale-105
-                                   transition-all duration-700 ease-out" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/20 to-transparent" />
+      {/* ══════════ LE PAYS — carrousel en perspective ══════════ */}
+      {showcase.length >= 3 && (
+        <section className="bg-ink py-16 sm:py-20 overflow-hidden">
+          <div className="max-w-[1280px] mx-auto px-5 sm:px-7 text-center mb-10">
+            <p className="eyebrow">{t('Le pays')}</p>
+            <AnimatedText as="h2" className="font-display font-extrabold text-cream text-[26px] sm:text-[34px]
+                           tracking-tight mt-2 mx-auto max-w-[24ch]">
+              {t('Du delta du Niger aux falaises dogon.')}
+            </AnimatedText>
+          </div>
 
-                      <span className="absolute top-3 right-3 w-8 h-8 rounded-full bg-ink/70 text-cream
-                                       backdrop-blur-sm flex items-center justify-center
-                                       opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <Icon name="expand" size={14} />
-                      </span>
-                    </button>
+          {/* La photo du centre s'ouvre en plein écran (légende et crédit lisibles) */}
+          <CoverflowCarousel items={showcase} onOpen={setLightbox} actionLabel={t('Voir la photo')} />
 
-                    <figcaption className="absolute inset-x-0 bottom-0 p-4 pointer-events-none">
-                      <p className="font-display font-bold text-cream text-[14px] leading-snug">
-                        {photo.caption}
-                      </p>
-                      <p className="font-mono text-2xs tracking-label uppercase text-clay-400 mt-1.5
-                                    opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        {photo.credit} · {photo.license}
-                      </p>
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-
-              <div className="relative px-7 sm:px-10 py-8 flex flex-wrap items-center justify-between gap-5">
-                <div className="absolute inset-0 grid-texture opacity-50" />
-                <div className="relative">
-                  <p className="eyebrow">{t('Le pays')}</p>
-                  <AnimatedText as="h2" className="font-display font-extrabold text-cream text-[26px] sm:text-[30px]
-                                 tracking-tight mt-2 max-w-[24ch]">
-                    {t('Du delta du Niger aux falaises dogon.')}
-                  </AnimatedText>
-                </div>
-                <div className="relative flex items-center gap-4 shrink-0">
-                  {showcase.length > 4 && (
-                    <button type="button" onClick={() => setLightbox(0)}
-                      className="font-mono text-2xs tracking-label uppercase text-clay-400
-                                 hover:text-gold transition-colors">
-                      Voir les {showcase.length} photos
-                    </button>
-                  )}
-                  <Link to="/rechercher" className="btn-gold">
-                    Voir les logements <Icon name="arrow-small-right" size={14} />
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </Reveal>
+          <div className="flex justify-center mt-10">
+            <Link to="/rechercher" className="btn-gold">
+              {t('Voir les logements')} <Icon name="arrow-small-right" size={14} />
+            </Link>
+          </div>
         </section>
       )}
 
