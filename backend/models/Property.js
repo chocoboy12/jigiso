@@ -93,7 +93,26 @@ const propertySchema = new mongoose.Schema({
     url: { type: String, required: true },
     publicId: { type: String },
     isMain: { type: Boolean, default: false },
+    // Empreinte du fichier : repère une même photo réutilisée dans une autre annonce
+    hash: { type: String, select: false },
   }],
+
+  /* ── Score de risque (modération) ────────────────────────
+     Calculé par services/risk.js à la publication. Visible de l'admin
+     seulement ; ne bloque rien à lui seul. `label` garde la décision de
+     l'admin (1 = refusée, 0 = approuvée) : c'est ce qui entraîne le modèle. */
+  risk: {
+    type: new mongoose.Schema({
+      score:      { type: Number, min: 0, max: 100 },
+      level:      { type: String, enum: ['faible', 'moyen', 'eleve'] },
+      reasons:    { type: [String], default: [] },
+      features:   { type: mongoose.Schema.Types.Mixed },
+      label:      { type: Number, enum: [0, 1] },
+      computedAt: { type: Date },
+    }, { _id: false }),
+    select: false,
+    default: undefined,
+  },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

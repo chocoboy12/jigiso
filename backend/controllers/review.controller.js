@@ -17,6 +17,18 @@ exports.getPropertyReviews = async (req, res) => {
   }
 };
 
+/* Notes par critère : facultatives, chacune entre 1 et 5. Tout autre champ
+   ou valeur est ignoré (le corps de requête vient du client). */
+const CRITERES = ['cleanliness', 'accuracy', 'communication', 'location', 'value'];
+const notesDetaillees = (brut) => {
+  const out = {};
+  for (const k of CRITERES) {
+    const n = Number.parseInt(brut?.[k], 10);
+    if (n >= 1 && n <= 5) out[k] = n;
+  }
+  return out;
+};
+
 // POST /api/reviews
 exports.createReview = async (req, res) => {
   try {
@@ -45,7 +57,7 @@ exports.createReview = async (req, res) => {
       property: propertyId,
       owner: property.owner,
       rating: Math.min(5, Math.max(1, parseInt(rating))),
-      ratings,
+      ratings: notesDetaillees(ratings),
       comment,
       isVerified: !!hasRented,
     });

@@ -5,6 +5,7 @@ import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/property_card.dart';
+import '../widgets/coverflow.dart';
 import 'request_sheet.dart';
 
 Route detailRoute(Property p) => PageRouteBuilder(
@@ -37,25 +38,101 @@ class _DetailScreenState extends State<DetailScreen> {
      boutons de contact manquent. */
   late Property p = widget.p;
 
+  /* Suggestions et loyer du marché : facultatifs, chargés en parallèle.
+     Rien ne s'affiche s'ils sont vides (pas assez d'annonces comparables). */
+  List<({Property property, String raison})> similaires = [];
+  Map<String, dynamic>? marche;
+
   @override
   void initState() {
     super.initState();
     Api.property(widget.p.id)
         .then((complet) { if (mounted) setState(() => p = complet); })
         .catchError((_) {/* hors ligne : on reste sur ce qu'on a */});
+    Api.similaires(widget.p.id)
+        .then((l) { if (mounted) setState(() => similaires = l); })
+        .catchError((_) {});
+    Api.prixDuMarche(widget.p.id)
+        .then((m) { if (mounted) setState(() => marche = m); })
+        .catchError((_) {});
   }
+
+  static const _verdicts = {
+    'bas': ('Loyer plutôt bas pour ce type de bien', Icons.trending_down_rounded, J.river),
+    'moyen': ('Loyer dans la moyenne du marché', Icons.check_circle_outline_rounded, J.leaf),
+    'eleve': ('Loyer au-dessus du marché', Icons.trending_up_rounded, J.goldDeep),
+  };
+
+  Widget _marche(Map<String, dynamic> m) {
+    final v = _verdicts[m['verdict']] ?? _verdicts['moyen']!;
+    int n(Object? x) => x is num ? x.toInt() : 0;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: v.$3.withValues(alpha: .08), borderRadius: BorderRadius.circular(16)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(v.$2, size: 20, color: v.$3),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(v.$1, style: J.sans(14, c: v.$3, w: FontWeight.w700)),
+          const SizedBox(height: 3),
+          Text('Les logements comparables se louent entre ${fcfa(n(m['low']))} et ${fcfa(n(m['high']))} FCFA par mois '
+              '(d’après ${n(m['comparables'])} annonces).', style: J.sans(12.5, c: J.clay600, w: FontWeight.w400, h: 1.4)),
+        ])),
+      ]),
+    );
+  }
+
+  Widget _similaires() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('LOGEMENTS SIMILAIRES', style: J.mono(10)),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 222,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: similaires.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) {
+              final s = similaires[i];
+              return Pressable(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailScreen(s.property))),
+                child: SizedBox(
+                  width: 200,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    ClipRRect(borderRadius: BorderRadius.circular(14),
+                        child: SizedBox(height: 120, width: 200, child: PropertyPhoto(s.property))),
+                    const SizedBox(height: 8),
+                    if (s.raison.isNotEmpty)
+                      Row(children: [
+                        const Icon(Icons.auto_awesome_rounded, size: 12, color: J.gold),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(s.raison, maxLines: 1, overflow: TextOverflow.ellipsis, style: J.sans(11.5, c: J.clay500))),
+                      ]),
+                    const SizedBox(height: 2),
+                    Text(s.property.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: J.sans(14, w: FontWeight.w700)),
+                    Text('${s.property.neighborhood}, ${s.property.city}', maxLines: 1, overflow: TextOverflow.ellipsis, style: J.sans(12, c: J.clay500)),
+                    Text('${fcfa(s.property.price)} FCFA / mois', style: J.sans(13, w: FontWeight.w700)),
+                  ]),
+                ),
+              );
+            },
+          ),
+        ),
+      ]);
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final amen = amenityKeys.where((k) => p.amenities[k] == true).toList();
     final canRent = p.availability && !p.reserved;
+    final carrousel = p.images.length > 1;
 
     return Scaffold(
       backgroundColor: J.cream,
       body: CustomScrollView(physics: const BouncingScrollPhysics(), slivers: [
         SliverAppBar(
-          expandedHeight: 380,
+          // Plusieurs photos : carrousel en perspective sur fond sombre, un peu plus haut
+          expandedHeight: carrousel ? 430 : 380,
           pinned: true,
           stretch: true,
           backgroundColor: J.cream,
@@ -66,7 +143,13 @@ class _DetailScreenState extends State<DetailScreen> {
             stretchModes: const [StretchMode.zoomBackground],
             background: Hero(
               tag: 'photo-${p.id}',
-              child: Stack(fit: StackFit.expand, children: [
+              child: carrousel
+                  ? Container(
+                      color: J.ink,
+                      padding: EdgeInsets.fromLTRB(0, MediaQuery.of(context).padding.top + 62, 0, 18),
+                      child: CoverflowGallery(count: p.photoCount, photo: (_, i) => PropertyPhoto(p, index: i)),
+                    )
+                  : Stack(fit: StackFit.expand, children: [
                 PageView.builder(
                   itemCount: p.photoCount,
                   onPageChanged: (i) => setState(() => photo = i),
@@ -110,6 +193,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(width: 8),
               _stat('${p.area}', 'M²'),
             ])),
+            if (marche != null) ...[const SizedBox(height: 16), _marche(marche!)],
             const SizedBox(height: 20),
             Entrance(delayMs: 220, child: Text(p.description, style: J.sans(15, c: J.clay600, w: FontWeight.w400, h: 1.6))),
             const SizedBox(height: 22),
@@ -135,6 +219,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 22),
             ],
             Entrance(delayMs: 320, child: _ownerCard(s, p)),
+            if (similaires.isNotEmpty) ...[const SizedBox(height: 28), _similaires()],
           ]),
         ),
       ]),

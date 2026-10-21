@@ -14,7 +14,7 @@ const PROTECTED_FIELDS = [
 
 const PROTECTED_PROPERTY_FIELDS = [
   'status', 'adminNote', 'owner', 'views', 'isActive',
-  'moderatedAt', 'moderatedBy', 'reportCount', 'fraudScore', 'fraudFlags',
+  'moderatedAt', 'moderatedBy', 'reportCount', 'fraudScore', 'fraudFlags', 'risk',
   '_id', 'id', '__v', 'createdAt', 'updatedAt',
 ];
 

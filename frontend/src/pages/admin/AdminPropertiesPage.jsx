@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Eye, CheckCircle, XCircle, Trash2, Home } from 'lucide-react';
 import Icon from '../../components/common/Icon';
 import { adminAPI, propertyAPI } from '../../services/api';
+import { NIVEAUX_RISQUE } from '../../components/admin/RiskPanel';
 import { formatNumber, STATUS_LABELS, getMainImage, formatDate } from '../../utils/helpers';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -53,6 +54,18 @@ export default function AdminPropertiesPage() {
     } catch (err) { toast.error(err.response?.data?.message || 'Suppression impossible'); }
   };
 
+  // Annonces publiées avant l'arrivée du score : calcul à la demande
+  const [calculRisque, setCalculRisque] = useState(false);
+  const calculerRisques = async () => {
+    setCalculRisque(true);
+    try {
+      const { data } = await adminAPI.refreshRisks();
+      toast.success(`${data.updated} annonce${data.updated > 1 ? 's' : ''} évaluée${data.updated > 1 ? 's' : ''}`);
+      fetchProperties();
+    } catch { toast.error('Calcul impossible'); }
+    finally { setCalculRisque(false); }
+  };
+
   const statusButtons = [
     { val: '', icon: 'apps', label: 'Tous' },
     { val: 'pending', icon: 'clock', label: 'En attente' },
@@ -65,7 +78,15 @@ export default function AdminPropertiesPage() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="font-display font-bold text-3xl text-gray-800">Logements</h1>
-        <p className="text-gray-500 mt-1">{total} logement{total !== 1 ? 's' : ''} au total</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
+          <p className="text-gray-500">{total} logement{total !== 1 ? 's' : ''} au total</p>
+          {properties.some(p => !p.risk) && (
+            <button type="button" onClick={calculerRisques} disabled={calculRisque}
+              className="text-sm font-semibold text-gold-deep hover:text-gold disabled:opacity-50">
+              {calculRisque ? 'Calcul en cours…' : 'Calculer le score de risque des annonces existantes'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtres */}
@@ -98,7 +119,7 @@ export default function AdminPropertiesPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['Logement', 'Propriétaire', 'Ville', 'Prix', 'Statut', 'Date', 'Actions'].map(h => (
+                  {['Logement', 'Propriétaire', 'Ville', 'Prix', 'Statut', 'Risque', 'Date', 'Actions'].map(h => (
                     <th key={h} className="text-left text-xs font-semibold text-gray-500 uppercase px-4 py-3">{h}</th>
                   ))}
                 </tr>
@@ -119,6 +140,16 @@ export default function AdminPropertiesPage() {
                       <td className="px-4 py-4 text-sm text-gray-600">{p.city}</td>
                       <td className="px-4 py-4 text-sm font-semibold text-primary-600">{formatNumber(p.price)} FCFA</td>
                       <td className="px-4 py-4"><span className={status.className}>{status.label}</span></td>
+                      <td className="px-4 py-4">
+                        {p.risk ? (
+                          /* Survol : les raisons ; le détail complet est sur la page de l'annonce */
+                          <span title={p.risk.reasons?.join('\n') || 'Aucun signal'}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-pill border text-xs font-semibold cursor-help ${(NIVEAUX_RISQUE[p.risk.level] || NIVEAUX_RISQUE.faible).classe}`}>
+                            {p.risk.score}
+                            {p.risk.reasons?.length > 0 && <span className="font-normal">· {p.risk.reasons.length}</span>}
+                          </span>
+                        ) : <span className="text-xs text-gray-300">—</span>}
+                      </td>
                       <td className="px-4 py-4 text-xs text-gray-500">{formatDate(p.createdAt)}</td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-1.5">

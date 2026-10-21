@@ -71,3 +71,20 @@ exports.read = async (key) => {
   }
   return fs.readFile(localPath(key));
 };
+
+/** Supprime un fichier privé. Sans erreur s'il n'existe déjà plus. */
+exports.remove = async (key) => {
+  if (BUCKET) {
+    await gcs().file(key).delete({ ignoreNotFound: true });
+    return;
+  }
+  if (EN_BASE) {
+    const b = gridfs();
+    for (const f of await b.find({ filename: key }).toArray()) await b.delete(f._id);
+    return;
+  }
+  const target = localPath(key);
+  await fs.rm(target, { force: true });
+  // Dossier du compte vidé : on le retire aussi
+  await fs.rmdir(path.dirname(target)).catch(() => {});
+};

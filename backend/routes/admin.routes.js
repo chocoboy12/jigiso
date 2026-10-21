@@ -16,6 +16,8 @@ router.delete('/users/:id', adminCtrl.deleteUser);
 router.get('/properties', adminCtrl.getAllProperties);
 // Routes avec email
 router.put('/properties/:id/approve', adminCtrl.approvePropertyWithEmail);
+router.get('/properties/:id/risk', adminCtrl.getPropertyRisk);
+router.post('/risk/refresh', adminCtrl.refreshRisks);
 router.put('/properties/:id/reject', adminCtrl.rejectPropertyWithEmail);
 router.get('/reports', adminCtrl.getReports);
 

@@ -73,17 +73,17 @@ mongod
 
 ---
 
-## 🌱 Initialiser la base de données
+## 🌱 Créer le compte administrateur
+
+Renseignez `ADMIN_EMAIL`, `ADMIN_PASSWORD` et `ADMIN_PHONE` dans `backend/.env`, puis :
 
 ```bash
 cd backend
-npm run seed
+npm run create-admin
 ```
 
-Cela crée :
-- ✅ Compte admin: admin@malirent.ml
-- ✅ Propriétaire exemple: proprietaire@example.ml / password123
-- ✅ 3 logements de démonstration
+Seul le compte admin est créé. Il n'y a volontairement aucune donnée de
+démonstration : les annonces, comptes et avis affichés sont toujours réels.
 
 ---
 

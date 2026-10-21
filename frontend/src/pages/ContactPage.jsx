@@ -16,9 +16,10 @@ const CONTACT_TYPES = [
   { value: 'other',       label: 'Autre',             desc: 'Toute autre demande' },
 ];
 
-/* Coordonnées réelles. Pas d'adresse physique : il n'y a pas de bureau. */
+/* Coordonnées réelles, fournies par le responsable du site.
+   Pas d'adresse physique : il n'y a pas de bureau. */
 const CONTACT_EMAIL = 'goitaaboubacar6@gmail.com';
-const CONTACT_PHONE = '+22376457841';
+const CONTACT_PHONE = '+22393141819';
 
 const CONTACT_DETAILS = [
   {
@@ -26,9 +27,8 @@ const CONTACT_DETAILS = [
     href: `mailto:${CONTACT_EMAIL}`, accent: true,
   },
   {
-    label: 'Téléphone · WhatsApp', value: '+223 76 45 78 41',
-    href: `tel:${CONTACT_PHONE}`,
-    note: 'Lun–Ven, 8h–18h',
+    label: 'Téléphone · WhatsApp', value: '+223 93 14 18 19',
+    href: `tel:${CONTACT_PHONE}`, whatsapp: CONTACT_PHONE,
   },
 ];
 
@@ -159,8 +159,8 @@ export default function ContactPage() {
                     <p className="font-display font-bold text-cream text-[19px] mt-1.5">{d.value}</p>
                   )}
                   {d.note && <p className="text-clay-400 text-[13px] mt-0.5">{d.note}</p>}
-                  {d.label.includes('WhatsApp') && (
-                    <a href={`https://wa.me/${CONTACT_PHONE.replace(/\D/g, '')}`}
+                  {d.whatsapp && (
+                    <a href={`https://wa.me/${d.whatsapp.replace(/\D/g, '')}`}
                       target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 font-mono text-2xs tracking-label uppercase
                                  text-clay-400 hover:text-gold transition-colors mt-2">

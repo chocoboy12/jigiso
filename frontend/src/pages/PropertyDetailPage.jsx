@@ -23,6 +23,9 @@ import { useT } from '../context/LanguageContext';
 import { useSeo } from '../hooks/useSeo';
 import CoverflowCarousel from '../components/common/CoverflowCarousel';
 import Lightbox from '../components/common/Lightbox';
+import PriceInsight from '../components/property/PriceInsight';
+import { SimilarListings } from '../components/property/Recommendations';
+import RiskPanel from '../components/admin/RiskPanel';
 
 /* Logo WhatsApp. Posé ici plutôt que recopié : le tracé fait 900 caractères
    et deux copies finissent par diverger. */
@@ -428,6 +431,9 @@ export default function PropertyDetailPage() {
           : retourAdmin ? t("Retour à l'admin") : t('Retour aux résultats')}
       </button>
 
+      {/* Modération : score de risque, seulement dans la console admin */}
+      {pathname.startsWith('/admin') && <RiskPanel propertyId={property._id} />}
+
       {/* ─── GALERIE ────────────────────────────────────── */}
       {(() => {
         const badges = (
@@ -492,6 +498,8 @@ export default function PropertyDetailPage() {
                 <span className="text-lg font-normal text-gray-500"> / {t(property.pricePeriod)}</span>
               </div>
               <p className="text-xs text-gray-400 mt-1">{t('Publié')} {timeAgo(property.createdAt, t)}</p>
+              {/* Loyer comparé aux annonces semblables (masqué sans assez de comparables) */}
+              <PriceInsight propertyId={property._id} />
             </div>
           </div>
 
@@ -704,6 +712,9 @@ export default function PropertyDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Suggestions pour les visiteurs ; pas dans l'admin ni dans l'espace propriétaire */}
+      {!retourAdmin && <SimilarListings propertyId={property._id} />}
 
       {/* ─── MODAL CONTACT PROPRIÉTAIRE ─────────────────── */}
       {showContactModal && (

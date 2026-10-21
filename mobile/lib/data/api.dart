@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -45,7 +46,46 @@ class Api {
   static Map<String, String> get _h => {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
+        if (visiteur != null) 'X-Visitor-Id': visiteur!,
       };
+
+  /// Identifiant anonyme de cet appareil, tiré au hasard une fois : il permet
+  /// aux recommandations de tenir compte des annonces consultées, même sans
+  /// compte. Aucun lien avec la personne ni avec le téléphone.
+  static String? visiteur;
+  static Future<void> preparerVisiteur() async {
+    if (visiteur != null) return;
+    try {
+      var v = await _coffre.read(key: 'jigiso_visiteur');
+      if (v == null || v.isEmpty) {
+        final r = Random.secure();
+        v = List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+        await _coffre.write(key: 'jigiso_visiteur', value: v);
+      }
+      visiteur = v;
+    } catch (_) {/* trousseau indisponible : pas de personnalisation */}
+  }
+
+  /// Logements semblables à une annonce, chacun avec la raison de la suggestion.
+  static Future<List<({Property property, String raison})>> similaires(String id) async {
+    final r = await http.get(Uri.parse('$base/properties/$id/similar?limit=6'), headers: _h)
+        .timeout(const Duration(seconds: 8));
+    if (r.statusCode != 200) return [];
+    final List liste = jsonDecode(r.body)['properties'] ?? [];
+    return liste.map((e) {
+      final j = e as Map<String, dynamic>;
+      return (property: Property.fromJson(j, resolve), raison: '${j['recommandation']?['raison'] ?? ''}');
+    }).toList();
+  }
+
+  /// Loyer comparé aux annonces semblables ; null si pas assez de comparables.
+  static Future<Map<String, dynamic>?> prixDuMarche(String id) async {
+    final r = await http.get(Uri.parse('$base/properties/$id/price-insight'), headers: _h)
+        .timeout(const Duration(seconds: 8));
+    if (r.statusCode != 200) return null;
+    final i = jsonDecode(r.body)['insight'] as Map<String, dynamic>?;
+    return (i?['available'] == true && i?['verdict'] != null) ? i : null;
+  }
 
   /// Même logique que resolveImageUrl() du site : chemins relatifs et
   /// URLs « localhost » repointés vers l'API réellement configurée.
@@ -70,9 +110,13 @@ class Api {
     return AppConfig.fromJson((j['config'] ?? j) as Map<String, dynamic>);
   }
 
-  static Future<List<Property>> properties({Map<String, String> place = const {}, String? type, int? maxPrice}) async {
+  /// [auto] : chargement que la personne n'a pas demandé (lancement de l'app,
+  /// rafraîchissement périodique). Le serveur ne le compte alors pas comme une
+  /// recherche, sinon l'analyse de la demande serait faussée.
+  static Future<List<Property>> properties({Map<String, String> place = const {}, String? type, int? maxPrice, bool auto = false}) async {
     final q = {
       'limit': '60',
+      if (auto) 'auto': '1',
       ...place,
       if (type != null) 'type': type,
       if (maxPrice != null) 'maxPrice': '$maxPrice',

@@ -6,12 +6,12 @@ import Icon from './Icon';
  * voisines de part et d'autre, inclinées et assombries, comme des pages
  * qu'on tourne. Défilement automatique (suspendu au survol, quand l'onglet
  * est caché ou si l'utilisateur préfère réduire les animations), flèches,
- * balayage tactile, compteur « 01 / 06 » et légende sous la photo.
+ * balayage tactile et compteur « 01 / 06 ». Pas de texte sous les photos :
+ * la photo du centre s'ouvre en plein écran (légende et crédit y figurent).
  *
  *   <CoverflowCarousel items={photos} onOpen={(i) => …} actionLabel="Voir la photo" />
  *
- * Chaque élément : { key, url, caption?, credit?, license? }. Sans légende
- * (photos d'une annonce), seuls le compteur et le lien d'agrandissement restent.
+ * Chaque élément : { key, url, caption? } — caption sert de texte alternatif.
  */
 const INTERVALLE = 5500;
 const VISIBLES = 2;   // voisines affichées de chaque côté
@@ -55,7 +55,6 @@ export default function CoverflowCarousel({ items, onOpen, actionLabel = 'Voir l
     };
   };
 
-  const photo = items[actif];
   const deux = (v) => String(v).padStart(2, '0');
 
   return (
@@ -121,27 +120,6 @@ export default function CoverflowCarousel({ items, onOpen, actionLabel = 'Voir l
         </div>
       )}
 
-      {/* Légende de la photo active */}
-      <div key={actif} className="text-center mt-6 px-5 animate-[fadeUp_.6s_ease-out] motion-reduce:animate-none">
-        {photo.caption && (
-          <h3 className="font-display font-extrabold text-cream text-[26px] sm:text-[40px] tracking-tight leading-tight">
-            {photo.caption}
-          </h3>
-        )}
-        {(photo.credit || photo.license) && (
-          <p className="text-clay-400 text-[14px] sm:text-[16px] mt-2">
-            {[photo.credit, photo.license].filter(Boolean).join(' · ')}
-          </p>
-        )}
-        {onOpen && (
-          <button type="button" onClick={() => onOpen(actif)}
-            className={`group inline-flex items-center gap-3 ${photo.caption ? 'mt-6' : 'mt-1'} pb-2 border-b-2 border-gold
-                       text-cream font-semibold text-[16px] sm:text-[18px] hover:text-gold transition-colors`}>
-            {actionLabel}
-            <Icon name="arrow-small-right" size={16} className="text-gold group-hover:translate-x-1 transition-transform" />
-          </button>
-        )}
-      </div>
     </div>
   );
 }

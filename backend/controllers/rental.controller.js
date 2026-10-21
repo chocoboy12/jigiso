@@ -1,5 +1,6 @@
 const RentalRequest = require('../models/RentalRequest');
 const Property = require('../models/Property');
+const Interaction = require('../models/Interaction');
 const emailService = require('../services/email.service');
 const {
   estReservee, reserver, liberer, libererExpirees,
@@ -78,6 +79,8 @@ exports.createRequest = async (req, res) => {
       duration,
       message,
     });
+
+    Interaction.noter(req, property._id, 'request');   // signal le plus fort pour les recommandations
 
     // Email au propriétaire
     emailService.sendRentalRequestToOwner({

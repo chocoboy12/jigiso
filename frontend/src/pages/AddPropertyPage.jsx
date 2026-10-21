@@ -5,7 +5,8 @@ import CompletenessPanel from '../components/property/CompletenessPanel';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/common/Icon';
 import { ConsoleHeader } from '../components/layout/ConsoleHeader';
-import { propertyAPI } from '../services/api';
+import { propertyAPI, aiAPI } from '../services/api';
+import { analyserPhoto } from '../utils/photoQuality';
 import { MALI_CITIES, PROPERTY_TYPES, AMENITIES, formatNumber } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import ContractForm, { CONTRAT_VIDE, contratComplet } from '../components/property/ContractForm';
@@ -54,9 +55,41 @@ export default function AddPropertyPage() {
 
   const handleImages = (e) => {
     const files = Array.from(e.target.files);
-    const added = files.map(file => ({ file, preview: URL.createObjectURL(file) }));
+    const added = files.map(file => ({ file, preview: URL.createObjectURL(file), qualite: null }));
     setImages(p => [...p, ...added].slice(0, MAX_PHOTOS));
     e.target.value = '';
+    // Contrôle de qualité de chaque photo, dans le navigateur
+    for (const img of added) {
+      analyserPhoto(img.file).then(qualite =>
+        setImages(p => p.map(x => (x.preview === img.preview ? { ...x, qualite } : x))));
+    }
+  };
+
+  /* ── Rédaction assistée par l'IA ───────────────────────────
+     Propose titre et description à partir des champs déjà remplis (et du
+     brouillon de description, repris comme notes). Le texte précédent est
+     gardé pour pouvoir revenir en arrière. */
+  const [redaction, setRedaction] = useState(false);
+  const [texteAvantIA, setTexteAvantIA] = useState(null);
+  const rediger = async () => {
+    if (!form.type || !form.city) return toast.error('Choisissez d’abord le type et la ville');
+    setRedaction(true);
+    try {
+      const { data } = await aiAPI.generateDescription({
+        type: form.type, city: form.city, neighborhood: form.neighborhood,
+        bedrooms: form.bedrooms, bathrooms: form.bathrooms, area: form.area,
+        furnished: form.furnished, amenities: form.amenities, notes: form.description,
+      });
+      setTexteAvantIA({ title: form.title, description: form.description });
+      setForm(f => ({ ...f, title: data.title, description: data.description }));
+      toast.success('Texte proposé : relisez-le et ajustez-le avant de publier');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Rédaction impossible pour le moment');
+    } finally { setRedaction(false); }
+  };
+  const annulerIA = () => {
+    setForm(f => ({ ...f, ...texteAvantIA }));
+    setTexteAvantIA(null);
   };
 
   const removeImage = (index) => {
@@ -250,7 +283,26 @@ export default function AddPropertyPage() {
           </div>
 
           <div className="mt-5">
-            <label className="label" htmlFor="description">Description</label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+              <label className="label !mb-0" htmlFor="description">Description</label>
+              <div className="flex items-center gap-3">
+                {texteAvantIA && (
+                  <button type="button" onClick={annulerIA}
+                    className="text-[13px] text-clay-500 hover:text-ink underline underline-offset-2">
+                    Revenir à mon texte
+                  </button>
+                )}
+                <button type="button" onClick={rediger} disabled={redaction}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-ink text-cream text-[13px] font-semibold hover:bg-ink/85 disabled:opacity-60">
+                  <Icon name={redaction ? 'spinner' : 'sparkles'} size={12} className={redaction ? 'animate-spin' : ''} />
+                  {redaction ? 'Rédaction…' : 'Rédiger avec l’IA'}
+                </button>
+              </div>
+            </div>
+            <p className="text-[12.5px] text-clay-400 mb-2">
+              Notez quelques mots (cour, forage, calme…) puis laissez l’IA rédiger titre et description.
+              Elle n’utilise que ce que vous avez indiqué.
+            </p>
             <textarea id="description" name="description" rows={6} maxLength={3000}
               className="input-field resize-y"
               placeholder="Cour intérieure, forage, groupe électrogène, quartier calme à 10 min du pont…"
@@ -287,8 +339,8 @@ export default function AddPropertyPage() {
               <span className="font-mono text-2xs text-clay-400">{images.length}/{MAX_PHOTOS}</span>
             </div>
             <p className="text-clay-500 text-[13.5px] leading-relaxed mt-2">
-              La première photo sert de couverture. Les annonces avec 6 photos ou plus
-              reçoivent deux fois plus de demandes.
+              La première photo sert de couverture. Montrez la façade, les pièces, la
+              cuisine et la salle d'eau : le locataire se fait une idée juste avant de se déplacer.
             </p>
 
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5 mt-5">
@@ -296,6 +348,15 @@ export default function AddPropertyPage() {
                 <div key={img.preview}
                   className="relative aspect-[4/3] rounded-xl overflow-hidden group bg-clay-100">
                   <img src={img.preview} alt="" className="w-full h-full object-cover" />
+
+                  {/* Qualité de la photo : avertissement, jamais de blocage */}
+                  {img.qualite?.length > 0 && (
+                    <span title={img.qualite.join('\n')}
+                      className="absolute right-1.5 top-1.5 w-5 h-5 rounded-full bg-gold text-ink
+                                 flex items-center justify-center z-10 cursor-help">
+                      <Icon name="exclamation" size={10} />
+                    </span>
+                  )}
 
                   {i === 0 ? (
                     <span className="absolute inset-x-0 bottom-0 bg-ink/80 text-cream font-mono
@@ -337,6 +398,18 @@ export default function AddPropertyPage() {
                 </label>
               ))}
             </div>
+            {images.some(i => i.qualite?.length) && (
+              <div className="mt-4 rounded-xl bg-gold/10 px-4 py-3">
+                <p className="text-[13px] font-semibold text-gold-deep">Photos à revoir</p>
+                <ul className="mt-1.5 space-y-1">
+                  {images.map((img, i) => img.qualite?.length > 0 && (
+                    <li key={img.preview} className="text-[12.5px] text-clay-600">
+                      Photo {i + 1} : {img.qualite.join(' · ')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
 
           {/* Avant publication */}

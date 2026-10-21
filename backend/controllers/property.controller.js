@@ -7,6 +7,10 @@ const SearchLog = require('../models/SearchLog');
 const emailService = require('../services/email.service');
 const { deleteImage, publicUrl } = require('../config/cloudinary');
 const { pick } = require('../middleware/guard');
+const Interaction = require('../models/Interaction');
+const recommender = require('../services/recommender');
+const pricing = require('../services/pricing');
+const risk = require('../services/risk');
 const { quartiersDeLaCommune } = require('../data/bamako');
 
 /* Un nom de quartier peut contenir un tiret ou une apostrophe : sans échappement,
@@ -148,6 +152,8 @@ exports.getStats = async (req, res) => {
         $group: {
           _id: null,
           total: { $sum: 1 },
+          // « Vérifié » = le locataire a réellement loué (demande acceptée)
+          verified: { $sum: { $cond: ['$isVerified', 1, 0] } },
           average: { $avg: '$rating' },
           cleanliness: { $avg: '$ratings.cleanliness' },
           accuracy: { $avg: '$ratings.accuracy' },
@@ -157,6 +163,11 @@ exports.getStats = async (req, res) => {
         },
       },
     ]);
+
+    // Répartition des notes globales (combien de 5★, de 4★…)
+    const parNote = await Review.aggregate([{ $group: { _id: '$rating', n: { $sum: 1 } } }]);
+    const repartition = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    for (const r of parNote) if (repartition[r._id] !== undefined) repartition[r._id] = r.n;
 
     const g = global[0] || {};
     res.json({
@@ -175,6 +186,8 @@ exports.getStats = async (req, res) => {
         byCity: byCity.map(c => ({ city: c._id, count: c.count, minPrice: c.minPrice })),
         reviews: {
           total: reviewAgg?.total || 0,
+          verified: reviewAgg?.verified || 0,
+          distribution: repartition,
           average: reviewAgg?.average || null,
           criteria: {
             cleanliness: reviewAgg?.cleanliness || null,
@@ -287,7 +300,9 @@ exports.getProperties = async (req, res) => {
     // Journal anonyme des recherches : alimente l'analyse de la demande.
     // Volontairement non attendu — une écriture lente ne doit pas retarder
     // la réponse envoyée au visiteur.
-    SearchLog.record({ city, type, maxPrice, bedrooms, furnished }, total);
+    // `auto=1` : chargement automatique de l'app (ville par défaut, rafraîchissement
+    // périodique) — ce n'est pas une recherche faite par quelqu'un, on ne la compte pas.
+    if (req.query.auto !== '1') SearchLog.record({ city, type, maxPrice, bedrooms, furnished }, total);
 
     res.json({ success: true, count: properties.length, total, totalPages: Math.ceil(total / parseInt(limit)), currentPage: parseInt(page), properties });
   } catch (error) {
@@ -301,6 +316,7 @@ exports.getProperty = async (req, res) => {
     if (!property) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
     property.views += 1;
     await property.save();
+    Interaction.noter(req, property._id, 'view');   // nourrit les recommandations
     let isFavorite = false;
     if (req.user) {
       const fav = await Favorite.findOne({ user: req.user._id, property: property._id });
@@ -332,9 +348,11 @@ exports.createProperty = async (req, res) => {
     }
 
     const images = [];
-    if (req.files?.length > 0) {
-      req.files.forEach((file, index) => {
-        images.push({ url: publicUrl(file, req), publicId: file.filename, isMain: index === 0 });
+    for (const [index, file] of (req.files || []).entries()) {
+      images.push({
+        url: publicUrl(file, req), publicId: file.filename, isMain: index === 0,
+        // Stockage local seulement : le fichier est sur le disque (Cloudinary : pas d'empreinte)
+        hash: file.path && !/^https?:/.test(file.path) ? await risk.empreinteFichier(file.path) : undefined,
       });
     }
     const property = await Property.create({
@@ -353,7 +371,13 @@ exports.createProperty = async (req, res) => {
       type,
     }).catch(err => console.error('Email admin nouvelle annonce:', err.message));
 
-    res.status(201).json({ success: true, message: 'Annonce créée! Elle sera visible après validation par l\'administrateur.', property });
+    // Score de risque pour la modération, calculé sans faire attendre le propriétaire
+    risk.mettreAJour(property._id);
+
+    // Les empreintes de photos restent internes
+    const reponse = property.toObject();
+    reponse.images = reponse.images.map(({ hash, ...img }) => img);
+    res.status(201).json({ success: true, message: 'Annonce créée! Elle sera visible après validation par l\'administrateur.', property: reponse });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur lors de la création.' });
   }
@@ -361,7 +385,8 @@ exports.createProperty = async (req, res) => {
 
 exports.updateProperty = async (req, res) => {
   try {
-    const property = await Property.findById(req.params.id);
+    // +images.hash : sinon les empreintes des photos déjà en place seraient perdues à la réécriture
+    const property = await Property.findById(req.params.id).select('+images.hash');
     if (!property) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
     if (property.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Non autorisé.' });
@@ -381,10 +406,14 @@ exports.updateProperty = async (req, res) => {
       catch { return res.status(400).json({ success: false, message: 'Équipements illisibles.' }); }
     }
     if (req.files?.length > 0) {
-      const newImages = req.files.map((file, index) => ({
-        url: publicUrl(file, req), publicId: file.filename,
-        isMain: property.images.length === 0 && index === 0,
-      }));
+      const newImages = [];
+      for (const [index, file] of req.files.entries()) {
+        newImages.push({
+          url: publicUrl(file, req), publicId: file.filename,
+          isMain: property.images.length === 0 && index === 0,
+          hash: file.path && !/^https?:/.test(file.path) ? await risk.empreinteFichier(file.path) : undefined,
+        });
+      }
       updateData.images = [...property.images, ...newImages].slice(0, 10);
     }
 
@@ -405,6 +434,9 @@ exports.updateProperty = async (req, res) => {
       meta: { fields: Object.keys(updateData), byAdmin: req.user.role === 'admin' },
     });
 
+    risk.mettreAJour(property._id);
+    recommender.invalider();
+
     res.json({ success: true, message: 'Annonce mise à jour. Elle repasse en validation.', property: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur.' });
@@ -424,6 +456,7 @@ exports.deleteProperty = async (req, res) => {
     await property.deleteOne();
     // Les favoris pointeraient sinon vers une annonce qui n'existe plus
     await Favorite.deleteMany({ property: property._id });
+    recommender.invalider();
 
     // Une suppression n'était pas tracée : impossible de savoir après coup
     // qui avait retiré une annonce.
@@ -445,6 +478,37 @@ exports.getMyProperties = async (req, res) => {
     const properties = await Property.find({ owner: req.user._id }).sort({ createdAt: -1 });
     res.json({ success: true, count: properties.length, properties });
   } catch {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+};
+
+/* ── Recommandations et prix ────────────────────────────────── */
+
+/** GET /api/properties/:id/similar — logements semblables, avec la raison. */
+exports.getSimilar = async (req, res) => {
+  try {
+    const limite = Math.min(Number.parseInt(req.query.limit, 10) || 4, 12);
+    const properties = await recommender.similaires(req.params.id, limite);
+    res.json({ success: true, properties });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+};
+
+/**
+ * GET /api/properties/:id/price-insight — le loyer de l'annonce comparé aux
+ * annonces semblables. `available: false` tant qu'il n'y a pas assez de
+ * comparables : l'interface n'affiche alors rien.
+ */
+exports.getPriceInsight = async (req, res) => {
+  try {
+    const p = await Property.findById(req.params.id)
+      .select('type city neighborhood bedrooms area furnished price pricePeriod').lean();
+    if (!p) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    if (p.pricePeriod !== 'mois') return res.json({ success: true, insight: { available: false } });
+    const est = await pricing.estimer(p, p._id);
+    res.json({ success: true, insight: { ...est, verdict: pricing.situer(p.price, est), price: p.price } });
+  } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });
   }
 };

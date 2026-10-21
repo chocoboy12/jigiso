@@ -14,7 +14,7 @@ const CRITERES = [
     cle: 'photos',
     poids: 30,
     libelle: 'Ajoutez au moins 4 photos',
-    aide: 'Les annonces avec 6 photos ou plus reçoivent deux fois plus de demandes.',
+    aide: 'Plusieurs photos (façade, pièces, cuisine, salle d’eau) donnent aux locataires une idée juste du logement.',
     mesure: (p) => Math.min((p.images?.length || 0) / 4, 1),
   },
   {

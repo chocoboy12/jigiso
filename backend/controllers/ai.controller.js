@@ -1,4 +1,8 @@
 const https = require('https');
+const Anthropic = require('@anthropic-ai/sdk');
+const { betaZodOutputFormat } = require('@anthropic-ai/sdk/helpers/beta/zod');
+const { z } = require('zod');
+const pricing = require('../services/pricing');
 const { buildSystem } = require('../services/assistant.service');
 const { repondre: repondreLocalement } = require('../services/assistant.local');
 require('dotenv').config();
@@ -55,7 +59,9 @@ exports.chat = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Messages requis.' });
     }
 
-    const system = "Tu es MaliBot, assistant immobilier de MaliRent au Mali. Tu connais les quartiers de Bamako: ACI 2000, Hippodrome, Badalabougou, Hamdallaye, Yirimadjo. Prix: chambre 25k-75k FCFA, studio 50k-150k FCFA, appartement 100k-400k FCFA, maison 200k-800k FCFA. Reponds en francais, court et amical (2-3 phrases).";
+    // Mêmes consignes que la version en continu : catalogue réel et interdiction
+    // d'inventer un prix (l'ancienne consigne contenait des fourchettes inventées).
+    const system = await buildSystem(propertyContext);
 
     const reply = await callClaude(messages, system);
     res.json({ success: true, reply: reply });
@@ -65,35 +71,123 @@ exports.chat = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/ai/estimate-price — loyer estimé à partir des annonces réelles
+ * comparables (services/pricing.js), et non plus deviné par un modèle de
+ * langage : un chiffre inventé ferait fixer un mauvais loyer. Sans assez
+ * d'annonces comparables, la réponse le dit (`available: false`).
+ */
 exports.estimatePrice = async (req, res) => {
   try {
-    const { type, city, neighborhood, bedrooms, area, furnished } = req.body;
+    const { type, city } = req.body;
     if (!type || !city) {
       return res.status(400).json({ success: false, message: 'Type et ville requis.' });
     }
-
-    const system = 'Expert immobilier Mali. Reponds UNIQUEMENT en JSON valide sans texte avant ou apres.';
-    const userMsg = "Estime loyer mensuel FCFA pour: " + type + " a " + city + " " + (neighborhood || '') + ", " + (bedrooms || 0) + " chambres, " + (area || 0) + "m2, " + (furnished ? 'meuble' : 'non meuble') + ". JSON: {min:0,max:0,recommended:0,confidence:'moyen',reasoning:'',tips:[]}";
-
-    const raw = await callClaude([{ role: 'user', content: userMsg }], system);
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('JSON invalide');
-    const estimate = JSON.parse(match[0]);
-    res.json({ success: true, estimate: estimate });
+    const est = await pricing.estimer(req.body);
+    const prix = Number(req.body.price) || 0;
+    res.json({ success: true, estimate: { ...est, verdict: pricing.situer(prix, est) } });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Estimation impossible pour le moment.' });
   }
 };
 
+/* ── Assistant de rédaction ─────────────────────────────────── */
+
+const AnnonceRedigee = z.object({
+  title: z.string(),
+  description: z.string(),
+});
+
+const LIBELLES_EQUIPEMENTS = {
+  parking: 'parking', electricity: 'électricité', water: 'eau courante',
+  airConditioning: 'climatisation', wifi: 'wi-fi', kitchen: 'cuisine équipée',
+  security: 'gardiennage / sécurité', generator: 'groupe électrogène',
+  balcony: 'balcon', garden: 'jardin ou cour',
+};
+
+const CONSIGNE_REDACTION = `Tu rédiges des annonces de location pour JIGISO, site de location de logements au Mali, sans intermédiaire.
+
+À partir des informations fournies par le propriétaire, écris en français :
+- un titre de 70 caractères au plus, concret (type de bien, atout principal, quartier) ;
+- une description de 60 à 130 mots, claire et chaleureuse, en paragraphes courts.
+
+Règles :
+- N'utilise QUE les informations fournies. N'invente aucun équipement, aucune distance, aucun commerce ou école à proximité, aucun état (« neuf », « rénové ») qui ne figure pas dans les informations. Un locataire se déplacera sur la foi de ce texte.
+- Si les notes du propriétaire contiennent des détails, reprends-les fidèlement et reformule-les proprement.
+- N'écris ni numéro de téléphone, ni e-mail, ni lien : le contact passe par la plateforme.
+- Ne répète pas le loyer dans la description (il est affiché à part).
+- Pas d'émojis, pas de majuscules d'insistance, pas de superlatifs creux (« exceptionnel », « unique »).`;
+
+let clientClaude;
+const claude = () => (clientClaude ||= new Anthropic());
+
+/**
+ * POST /api/ai/describe — propose un titre et une description à partir des
+ * champs du formulaire. Le propriétaire relit et modifie avant de publier.
+ */
 exports.generateDescription = async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ success: false, message: "L'assistant de rédaction n'est pas configuré sur le serveur." });
+  }
+  const b = req.body || {};
+  if (!b.type || !b.city) {
+    return res.status(400).json({ success: false, message: 'Indiquez au moins le type de logement et la ville.' });
+  }
+
+  const texte = (v, max = 200) => String(v ?? '').trim().slice(0, max);
+  let equipements = b.amenities;
+  if (typeof equipements === 'string') { try { equipements = JSON.parse(equipements); } catch { equipements = {}; } }
+  const listeEquipements = Object.entries(equipements || {})
+    .filter(([k, v]) => v && LIBELLES_EQUIPEMENTS[k]).map(([k]) => LIBELLES_EQUIPEMENTS[k]);
+
+  const infos = [
+    `Type : ${texte(b.type, 40)}`,
+    `Ville : ${texte(b.city, 60)}`,
+    b.neighborhood && `Quartier : ${texte(b.neighborhood, 80)}`,
+    b.bedrooms !== undefined && b.bedrooms !== '' && `Chambres : ${Number.parseInt(b.bedrooms, 10) || 0}`,
+    b.bathrooms !== undefined && b.bathrooms !== '' && `Salles de bain : ${Number.parseInt(b.bathrooms, 10) || 0}`,
+    Number(b.area) > 0 && `Surface : ${Number.parseInt(b.area, 10)} m²`,
+    `Meublé : ${b.furnished === true || b.furnished === 'true' ? 'oui' : 'non'}`,
+    listeEquipements.length && `Équipements : ${listeEquipements.join(', ')}`,
+    texte(b.notes, 1500) && `Notes du propriétaire : ${texte(b.notes, 1500)}`,
+  ].filter(Boolean).join('\n');
+
   try {
-    const { type, city, neighborhood, bedrooms, area, furnished, price } = req.body;
-    const system = 'Expert immobilier Mali. Ecris des descriptions en francais.';
-    const userMsg = "Description courte 100 mots pour: " + type + " a " + city + " " + (neighborhood || '') + ", " + (bedrooms || 0) + " chambres, " + (area || 0) + "m2, " + (furnished ? 'meuble' : 'non meuble') + ".";
-    const description = await callClaude([{ role: 'user', content: userMsg }], system);
-    res.json({ success: true, description: description.trim() });
+    /* Modèle de secours : si Claude Opus 5.5 décline la demande (filtres de
+       sécurité), le serveur d'Anthropic la relance lui-même sur le modèle
+       recommandé pour ce cas (`fallbacks: "default"`), dans le même appel. */
+    const reponse = await claude().beta.messages.parse({
+      model: 'claude-opus-5-5',
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      max_tokens: 2000,
+      output_config: { effort: 'low', format: betaZodOutputFormat(AnnonceRedigee) },
+      system: CONSIGNE_REDACTION,
+      messages: [{ role: 'user', content: `Informations sur le logement :\n${infos}` }],
+    });
+
+    if (reponse.model !== 'claude-opus-5-5') {
+      console.log(`[rédaction IA] réponse fournie par le modèle de secours ${reponse.model}`);
+    }
+    // Refus de toute la chaîne (modèle principal ET secours), ou réponse illisible
+    if (reponse.stop_reason === 'refusal' || !reponse.parsed_output) {
+      return res.status(422).json({ success: false, message: "L'assistant n'a pas pu rédiger ce texte. Écrivez-le vous-même ou modifiez les informations." });
+    }
+    const { title, description } = reponse.parsed_output;
+    res.json({ success: true, title: title.trim().slice(0, 100), description: description.trim().slice(0, 3000) });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('[rédaction IA]', error.status || '', error.message);
+    if (error instanceof Anthropic.RateLimitError) {
+      return res.status(429).json({ success: false, message: "L'assistant est très sollicité. Réessayez dans une minute." });
+    }
+    if (error instanceof Anthropic.BadRequestError) {
+      // Cas typique : compte Anthropic sans crédit. Rien que le propriétaire puisse corriger.
+      return res.status(503).json({ success: false, message: "L'assistant de rédaction est momentanément indisponible. Écrivez votre texte vous-même : vous pourrez le relancer plus tard." });
+    }
+    if (error instanceof Anthropic.AuthenticationError) {
+      return res.status(503).json({ success: false, message: "La clé de l'assistant de rédaction est refusée. Prévenez l'administrateur." });
+    }
+    res.status(502).json({ success: false, message: "L'assistant de rédaction ne répond pas pour le moment." });
   }
 };
 

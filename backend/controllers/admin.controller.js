@@ -4,6 +4,9 @@ const RentalRequest = require('../models/RentalRequest');
 const Report = require('../models/Report');
 const Favorite = require('../models/Favorite');
 const { deleteImage } = require('../config/cloudinary');
+const risk = require('../services/risk');
+const recommender = require('../services/recommender');
+const MlModel = require('../models/MlModel');
 
 // ─── GET /api/admin/stats ─────────────────────────────────
 exports.getStats = async (req, res) => {
@@ -89,9 +92,16 @@ exports.toggleBlockUser = async (req, res) => {
 // ─── DELETE /api/admin/users/:id ──────────────────────────
 exports.deleteUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).select('+ownerVerification.documents');
     if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable.' });
     if (user.role === 'admin') return res.status(400).json({ success: false, message: 'Impossible de supprimer un admin.' });
+
+    /* Pièces d'identité : documents privés, sans raison d'être conservés
+       une fois le compte supprimé. Effacées du stockage (disque, base ou
+       Cloud Storage selon l'hébergement). */
+    for (const doc of user.ownerVerification?.documents || []) {
+      if (doc.storageKey) await privateStorage.remove(doc.storageKey).catch(e => console.error('[KYC] suppression', e.message));
+    }
 
     /* Les annonces d'un propriétaire supprimé restaient en ligne sans
        personne derrière : un locataire ne pouvait plus rien en faire (la
@@ -124,6 +134,7 @@ exports.getAllProperties = async (req, res) => {
     const filter = status ? { status } : {};
     const total = await Property.countDocuments(filter);
     const properties = await Property.find(filter)
+      .select('+risk')
       .populate('owner', 'name email phone')
       .sort({ createdAt: -1 })
       .skip((parseInt(page) - 1) * parseInt(limit))
@@ -212,6 +223,9 @@ exports.approvePropertyWithEmail = async (req, res) => {
       propertyId: property._id,
     }).catch(err => console.error('Email approbation:', err.message));
 
+    // Chaque décision devient un exemple pour le modèle de risque
+    risk.apprendreDecision(property._id, false);
+    recommender.invalider();
     res.json({ success: true, message: 'Annonce approuvée. Email envoyé au propriétaire.', property });
   } catch { res.status(500).json({ success: false, message: 'Erreur serveur.' }); }
 };
@@ -231,6 +245,8 @@ exports.rejectPropertyWithEmail = async (req, res) => {
       reason,
     }).catch(err => console.error('Email refus:', err.message));
 
+    risk.apprendreDecision(property._id, true);
+    recommender.invalider();
     res.json({ success: true, message: 'Annonce refusée. Email envoyé au propriétaire.', property });
   } catch { res.status(500).json({ success: false, message: 'Erreur serveur.' }); }
 };
@@ -367,6 +383,40 @@ exports.getSecurityLogs = async (req, res) => {
       .lean();
 
     res.json({ success: true, count: logs.length, logs });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+};
+
+/* ── Score de risque ─────────────────────────────────────────── */
+
+/**
+ * GET /api/admin/properties/:id/risk — score recalculé à l'instant, avec ses
+ * raisons et l'état du modèle appris (nombre d'exemples, exactitude).
+ */
+exports.getPropertyRisk = async (req, res) => {
+  try {
+    const r = await risk.mettreAJour(req.params.id);
+    if (!r) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    res.json({ success: true, risk: r });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+};
+
+/**
+ * POST /api/admin/risk/refresh — calcule le score des annonces qui n'en ont
+ * pas encore (publiées avant l'arrivée du score). Renvoie aussi l'état du modèle.
+ */
+exports.refreshRisks = async (req, res) => {
+  try {
+    const sans = await Property.find({ risk: { $exists: false } }).select('_id').limit(500).lean();
+    for (const p of sans) await risk.mettreAJour(p._id);
+    const modele = await MlModel.findOne({ name: 'risk' }).lean();
+    res.json({
+      success: true, updated: sans.length,
+      model: modele ? { samples: modele.samples, accuracy: modele.accuracy, trainedAt: modele.trainedAt } : null,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });
   }

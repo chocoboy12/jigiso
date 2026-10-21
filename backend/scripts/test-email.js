@@ -33,7 +33,7 @@ const to = process.argv[2] || process.env.ADMIN_NOTIFICATION_EMAIL;
       process.exit(1);
     }
     const res = await emailService.sendContactToAdmin({
-      senderName: 'Test JIGISO', senderEmail: to, senderPhone: '+223 76 45 78 41',
+      senderName: 'Test JIGISO', senderEmail: to, senderPhone: '',
       subject: "Test d'envoi", type: 'question',
       messageContent: "Si vous lisez ceci, l'envoi d'e-mails fonctionne.",
     });

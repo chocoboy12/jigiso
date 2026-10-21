@@ -71,7 +71,8 @@ export default function SearchPage() {
     if (!silencieux) setLoading(true);
     try {
       const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== ''));
-      const { data } = await propertyAPI.getAll(params);
+      // Rafraîchissement silencieux : déjà compté à la première recherche
+      const { data } = await propertyAPI.getAll(silencieux ? { ...params, auto: 1 } : params);
       setProperties(data.properties);
       setTotal(data.total);
       setTotalPages(data.totalPages);

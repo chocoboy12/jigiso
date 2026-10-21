@@ -1,10 +1,21 @@
 import { useState } from 'react';
-import { Sparkles, TrendingUp, Loader } from 'lucide-react';
+import { TrendingUp, Loader } from 'lucide-react';
 import Icon from '../common/Icon';
 import { aiAPI } from '../../services/api';
 import { formatNumber } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 
+const VERDICTS = {
+  bas:   'Votre loyer est en dessous des annonces comparables.',
+  moyen: 'Votre loyer est dans la fourchette des annonces comparables.',
+  eleve: 'Votre loyer est au-dessus des annonces comparables : attendez-vous à moins de demandes.',
+};
+
+/**
+ * Estimation du loyer à partir des annonces réelles comparables (même type,
+ * même ville, logements les plus proches). Aucun chiffre n'est inventé :
+ * sans assez d'annonces comparables, le composant le dit.
+ */
 export default function PriceEstimator({ formData, onApplyPrice }) {
   const [estimate, setEstimate] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,10 +31,9 @@ export default function PriceEstimator({ formData, onApplyPrice }) {
         city: formData.city,
         neighborhood: formData.neighborhood,
         bedrooms: formData.bedrooms,
-        bathrooms: formData.bathrooms,
         area: formData.area,
         furnished: formData.furnished,
-        amenities: formData.amenities,
+        price: formData.price,
       });
       setEstimate(data.estimate);
     } catch (err) {
@@ -33,18 +43,12 @@ export default function PriceEstimator({ formData, onApplyPrice }) {
     }
   };
 
-  const confidenceColor = {
-    'élevé': 'text-green-600 bg-green-50',
-    'moyen': 'text-yellow-600 bg-yellow-50',
-    'faible': 'text-gray-600 bg-gray-50',
-  };
-
   return (
     <div className="border-2 border-dashed border-primary-200 rounded-2xl p-5 bg-primary-50/40">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 gap-3">
         <div className="flex items-center gap-2">
-          <Sparkles size={18} className="text-primary-500" />
-          <span className="font-semibold text-gray-800">Estimation IA du prix</span>
+          <Icon name="chart-histogram" size={16} className="text-primary-500" />
+          <span className="font-semibold text-gray-800">Loyer du marché</span>
         </div>
         <button
           type="button"
@@ -54,71 +58,52 @@ export default function PriceEstimator({ formData, onApplyPrice }) {
         >
           {loading
             ? <><Loader size={14} className="animate-spin" /> Calcul...</>
-            : <><TrendingUp size={14} /> Estimer</>
-          }
+            : <><TrendingUp size={14} /> Comparer</>}
         </button>
       </div>
 
       {!estimate && !loading && (
         <p className="text-sm text-gray-500">
-          Notre IA analyse le marché malien et suggère un prix optimal selon votre logement.
-          Remplissez les informations ci-dessus puis cliquez sur "Estimer".
+          Comparez votre loyer à celui des logements semblables déjà publiés sur JIGISO
+          (même type, même ville, quartier et taille proches).
         </p>
       )}
 
-      {estimate && (
+      {estimate && !estimate.available && (
+        <p className="text-sm text-gray-600">
+          Pas encore assez d'annonces comparables pour estimer un loyer fiable
+          ({estimate.comparables} sur les {estimate.needed} nécessaires). L'estimation
+          apparaîtra d'elle-même quand le site en comptera davantage.
+        </p>
+      )}
+
+      {estimate?.available && (
         <div className="mt-3 space-y-3">
-          {/* Fourchette de prix */}
           <div className="flex items-center justify-between">
             <div className="text-center">
-              <p className="text-xs text-gray-500">Minimum</p>
-              <p className="font-bold text-gray-800">{formatNumber(estimate.min)} FCFA</p>
+              <p className="text-xs text-gray-500">Bas de fourchette</p>
+              <p className="font-bold text-gray-800">{formatNumber(estimate.low)} FCFA</p>
             </div>
             <div className="text-center flex-1 mx-4">
-              <p className="text-xs text-primary-600 font-semibold uppercase">Recommandé</p>
-              <p className="text-xl font-bold text-primary-600 font-display">{formatNumber(estimate.recommended)} FCFA</p>
+              <p className="text-xs text-primary-600 font-semibold uppercase">Loyer typique</p>
+              <p className="text-xl font-bold text-primary-600 font-display">{formatNumber(estimate.estimate)} FCFA</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-500">Maximum</p>
-              <p className="font-bold text-gray-800">{formatNumber(estimate.max)} FCFA</p>
+              <p className="text-xs text-gray-500">Haut de fourchette</p>
+              <p className="font-bold text-gray-800">{formatNumber(estimate.high)} FCFA</p>
             </div>
           </div>
 
-          {/* Barre visuelle */}
-          <div className="relative h-2 bg-gray-200 rounded-full">
-            <div className="absolute inset-y-0 rounded-full bg-primary-200"
-              style={{ left: '0%', width: '100%' }} />
-            <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary-500 rounded-full border-2 border-white shadow"
-              style={{ left: `${((estimate.recommended - estimate.min) / (estimate.max - estimate.min)) * 100}%`, transform: 'translate(-50%, -50%)' }} />
-          </div>
-
-          {/* Confiance + Raisonnement */}
-          <div className="flex items-start gap-3">
-            <span className={`text-xs px-2 py-1 rounded-full font-semibold flex-shrink-0 ${confidenceColor[estimate.confidence] || 'text-gray-600 bg-gray-50'}`}>
-              Confiance: {estimate.confidence}
-            </span>
-            <p className="text-xs text-gray-600 leading-relaxed">{estimate.reasoning}</p>
-          </div>
-
-          {/* Conseils */}
-          {estimate.tips?.length > 0 && (
-            <div className="space-y-1">
-              {estimate.tips.map((tip, i) => (
-                <p key={i} className="text-xs text-gray-500 flex items-start gap-1.5">
-                  <Icon name="bulb" size={12} className="text-primary-500 mt-0.5" />
-                  {tip}
-                </p>
-              ))}
-            </div>
+          {estimate.verdict && (
+            <p className="text-sm text-gray-700">{VERDICTS[estimate.verdict]}</p>
           )}
+          <p className="text-xs text-gray-500">
+            D'après les {estimate.comparables} annonces les plus proches parmi {estimate.pool} comparables.
+          </p>
 
-          {/* Bouton appliquer */}
-          <button
-            type="button"
-            onClick={() => onApplyPrice?.(estimate.recommended)}
-            className="w-full text-sm bg-primary-100 text-primary-700 py-2 rounded-xl font-semibold hover:bg-primary-200 transition-colors flex items-center justify-center gap-2"
-          >
-            <Icon name="check" size={13} /> Appliquer {formatNumber(estimate.recommended)} FCFA comme prix
+          <button type="button" onClick={() => onApplyPrice(estimate.estimate)}
+            className="w-full py-2 rounded-xl border border-primary-300 text-primary-700 text-sm font-semibold hover:bg-primary-50">
+            Utiliser {formatNumber(estimate.estimate)} FCFA
           </button>
         </div>
       )}

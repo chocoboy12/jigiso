@@ -12,12 +12,28 @@ const API = axios.create({
   timeout: 15000,
 });
 
+/* Identifiant visiteur anonyme : un tirage aléatoire gardé dans ce navigateur,
+   sans lien avec une personne. Il permet aux recommandations « Pour vous » de
+   fonctionner aussi pour qui n'a pas de compte. */
+const idVisiteur = () => {
+  try {
+    let v = localStorage.getItem('jigiso_visiteur');
+    if (!v) {
+      v = (crypto.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+      localStorage.setItem('jigiso_visiteur', v);
+    }
+    return v;
+  } catch { return null; }   // navigation privée stricte : pas de personnalisation
+};
+
 // Ajouter le token JWT à chaque requête
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem('malirent_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const visiteur = idVisiteur();
+  if (visiteur) config.headers['X-Visitor-Id'] = visiteur;
   return config;
 });
 
@@ -53,6 +69,13 @@ export const propertyAPI = {
   delete:         (id)     => API.delete(`/properties/${id}`),
   getMyProperties: ()      => API.get('/properties/my-properties'),
   getStats:       ()       => API.get('/properties/stats'),
+  getSimilar:     (id, limit = 4) => API.get(`/properties/${id}/similar`, { params: { limit } }),
+  getPriceInsight: (id)    => API.get(`/properties/${id}/price-insight`),
+};
+
+// ─── Recommandations « Pour vous » ──────────────────────
+export const recommendationAPI = {
+  get: (limit = 6) => API.get('/recommendations', { params: { limit } }),
 };
 
 // ─── Villes du Mali ─────────────────────────────────────
@@ -159,6 +182,8 @@ export const adminAPI = {
   getProperties:    (params)    => API.get('/admin/properties', { params }),
   approveProperty:  (id)        => API.put(`/admin/properties/${id}/approve`),
   rejectProperty:   (id, data)  => API.put(`/admin/properties/${id}/reject`, data),
+  getPropertyRisk:  (id)        => API.get(`/admin/properties/${id}/risk`),
+  refreshRisks:     ()          => API.post('/admin/risk/refresh'),
   getReports:       ()          => API.get('/admin/reports'),
   getVerifications: (params)    => API.get('/admin/verifications', { params }),
   decideVerification: (userId, data) => API.put(`/admin/verifications/${userId}`, data),
@@ -217,7 +242,8 @@ export const aiAPI = {
     }
   },
   estimatePrice:      (data) => API.post('/ai/estimate-price', data),
-  generateDescription:(data) => API.post('/ai/describe', data),
+  // La rédaction par l'IA peut prendre plus de 15 s
+  generateDescription:(data) => API.post('/ai/describe', data, { timeout: 60000 }),
 };
 
 // ─── Reviews ────────────────────────────────────────────

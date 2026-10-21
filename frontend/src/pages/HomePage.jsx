@@ -12,6 +12,7 @@ import { useT } from '../context/LanguageContext';
 import { useRetourOnglet } from '../hooks/useRetourOnglet';
 import { useSeo } from '../hooks/useSeo';
 import CoverflowCarousel from '../components/common/CoverflowCarousel';
+import { ForYou } from '../components/property/Recommendations';
 
 /* Bornes du curseur de budget du hero */
 const BUDGET_MAX = 800000;
@@ -168,7 +169,9 @@ export default function HomePage() {
 
   const chargerAnnonces = (silencieux = false) => {
     if (!silencieux) setLoading(true);
-    return propertyAPI.getAll(activeType ? { limit: 6, type: activeType } : { limit: 6, sort: 'newest' })
+    // Rafraîchissement silencieux (retour sur l'onglet) : pas une recherche, `auto` évite de la compter
+    const params = activeType ? { limit: 6, type: activeType } : { limit: 6, sort: 'newest' };
+    return propertyAPI.getAll(silencieux ? { ...params, auto: 1 } : params)
       .then(({ data }) => setProperties(data.properties || []))
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -188,7 +191,8 @@ export default function HomePage() {
     setPreviewing(true);
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      const params = { limit: 1 };
+      // Aperçu pendant la saisie : la vraie recherche est comptée sur la page de résultats
+      const params = { limit: 1, auto: 1 };
       if (form.city) params.city = form.city;
       if (form.type) params.type = form.type;
       if (form.maxPrice) params.maxPrice = form.maxPrice;
@@ -758,9 +762,14 @@ export default function HomePage() {
       <Lightbox photos={showcase} index={lightbox}
         onClose={() => setLightbox(null)} onNavigate={setLightbox} />
 
+      {/* Sélection personnelle, seulement si la personne a déjà un historique */}
+      <ForYou />
+
       {/* ══════════ 04 — CONFIANCE ══════════ */}
-      <section className="max-w-[1280px] mx-auto px-5 sm:px-7 pb-20">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+      <section id="confiance" className="max-w-[1280px] mx-auto px-5 sm:px-7 pt-20 sm:pt-24 pb-20 scroll-mt-24">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,500px)] gap-12 lg:gap-20 items-center">
+          {/* Le principe, puis trois garanties en liste (et non en pastilles
+              qui se répartissaient mal sur deux lignes) */}
           <div>
             <Eyebrow n="04">{t('Confiance')}</Eyebrow>
             <AnimatedText as="h2" className="section-title mt-3 max-w-[19ch]">
@@ -769,53 +778,128 @@ export default function HomePage() {
             <p className="text-clay-500 text-[15px] leading-relaxed mt-5 max-w-[46ch]">
               {t("Après chaque location, le locataire note le bien sur cinq points précis. La moyenne s'affiche sur l'annonce — impossible à retoucher par le propriétaire.")}
             </p>
-            <div className="flex flex-wrap gap-2.5 mt-7">
-              {['Signalement en 1 clic', "Comptes bloqués par l'admin", 'Annonces validées à la main'].map(gage => (
-                <span key={gage} className="pill cursor-default">{t(gage)}</span>
+
+            <ul className="mt-8 divide-y divide-cream-line border-y border-cream-line max-w-[520px]">
+              {[
+                ['shield-check', 'Annonces validées à la main', "Chaque annonce est relue par l'équipe avant d'être publiée."],
+                ['flag', 'Signalement en 1 clic', 'Une annonce douteuse se signale directement depuis sa page.'],
+                ['lock', "Comptes bloqués par l'admin", 'Un compte frauduleux est bloqué : il ne peut plus se connecter.'],
+              ].map(([icone, titre, texte]) => (
+                <li key={titre} className="flex items-start gap-4 py-4">
+                  <span className="w-10 h-10 shrink-0 rounded-full bg-gold/10 text-gold-deep grid place-items-center">
+                    <Icon name={icone} size={16} />
+                  </span>
+                  <div>
+                    <p className="font-semibold text-ink text-[15px]">{t(titre)}</p>
+                    <p className="text-clay-500 text-[13.5px] leading-relaxed mt-0.5">{t(texte)}</p>
+                  </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
 
-          {/* Panneau de notes — alimenté par la BD quand des avis existent */}
-          <div className="card p-8">
-            <div className="flex items-center gap-5 pb-6 border-b border-cream-line">
-              <span className="font-display font-extrabold text-ink text-[46px] leading-none tracking-tight">
-                {reviewStats?.average ? reviewStats.average.toFixed(1).replace('.', ',') : '—'}
-              </span>
-              <div>
-                <div className="flex gap-0.5 text-gold">
-                  {[...Array(5)].map((_, i) => (
-                    <Icon key={i} name="star" size={14}
-                      variant={reviewStats?.average >= i + 0.5 ? 'solid' : 'regular'} />
-                  ))}
+          {/* Panneau de notes — chiffres réels de la base */}
+          {(() => {
+            const total = reviewStats?.total || 0;
+            const verifies = reviewStats?.verified || 0;
+            const auMoinsUnCritere = CRITERIA.some(([, k]) => reviewStats?.criteria?.[k]);
+            const virgule = (v) => v.toFixed(1).replace('.', ',');
+            return (
+              <div className="card p-7 sm:p-8">
+                <p className="label">{t('Note moyenne des logements')}</p>
+                <div className="flex items-end gap-5 mt-3 pb-6 border-b border-cream-line">
+                  <span className="font-display font-extrabold text-ink text-[52px] leading-none tracking-tight">
+                    {reviewStats?.average ? virgule(reviewStats.average) : '—'}
+                  </span>
+                  <div className="pb-1">
+                    <div className="flex gap-0.5 text-gold">
+                      {[...Array(5)].map((_, i) => (
+                        <Icon key={i} name="star" size={15}
+                          variant={reviewStats?.average >= i + 0.5 ? 'solid' : 'regular'} />
+                      ))}
+                    </div>
+                    <p className="text-clay-500 text-[13px] mt-1.5">
+                      {total
+                        ? <>
+                            {total === 1 ? t('1 avis') : t('{count} avis', { count: formatNumber(total) })}
+                            {verifies > 0 && <> · <span className="text-leaf font-semibold">
+                              {t(verifies > 1 ? '{count} vérifiés' : '{count} vérifié', { count: formatNumber(verifies) })}
+                            </span></>}
+                          </>
+                        : t('Aucun avis pour le moment')}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-clay-500 text-[13px] mt-1.5">
-                  {reviewStats?.total
-                    ? t(reviewStats.total > 1 ? '{count} avis vérifiés' : '{count} avis vérifié',
-                        { count: formatNumber(reviewStats.total) })
-                    : t('Aucun avis pour le moment')}
+
+                {/* Répartition des notes : parlante dès le premier avis */}
+                {total > 0 && (
+                  <div className="mt-6">
+                    <p className="label">{t('Répartition des notes')}</p>
+                    <div className="space-y-2.5 mt-3">
+                      {[5, 4, 3, 2, 1].map(etoiles => {
+                        const n = reviewStats?.distribution?.[etoiles] || 0;
+                        return (
+                          <div key={etoiles} className="grid grid-cols-[34px_1fr_28px] items-center gap-3">
+                            <span className="flex items-center gap-1 font-mono text-[12.5px] text-clay-600">
+                              {etoiles} <Icon name="star" size={10} variant="solid" className="text-gold" />
+                            </span>
+                            <span className="h-2 rounded-pill bg-cream-line overflow-hidden">
+                              <span className="block h-full rounded-pill bg-gold transition-all duration-700"
+                                style={{ width: `${(n / total) * 100}%` }} />
+                            </span>
+                            <span className={`font-mono text-[12.5px] text-right ${n ? 'text-ink' : 'text-clay-300'}`}>{n}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Les cinq critères : en barres dès qu'ils sont notés, sinon
+                    en étiquettes discrètes plutôt que cinq barres vides */}
+                <div className="mt-7 pt-6 border-t border-cream-line">
+                  <p className="label">{t('Les cinq critères')}</p>
+                  {auMoinsUnCritere ? (
+                    <div className="space-y-3.5 mt-4">
+                      {CRITERIA.map(([label, key]) => {
+                        const v = reviewStats?.criteria?.[key];
+                        return (
+                          <div key={key} className="grid grid-cols-[minmax(0,150px)_1fr_40px] items-center gap-4">
+                            <span className="text-[13.5px] text-clay-600 truncate">{t(label)}</span>
+                            <span className="h-1.5 rounded-pill bg-cream-line overflow-hidden">
+                              <span className="block h-full rounded-pill bg-gold transition-all duration-700"
+                                style={{ width: v ? `${(v / 5) * 100}%` : '0%' }} />
+                            </span>
+                            <span className={`font-mono text-[12.5px] text-right ${v ? 'text-ink' : 'text-clay-300'}`}>
+                              {v ? virgule(v) : '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {CRITERIA.map(([label, key]) => (
+                          <span key={key} className="px-3 py-1.5 rounded-pill border border-cream-line text-[12.5px] text-clay-600">
+                            {t(label)}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[12.5px] text-clay-400 mt-3">
+                        {t("Le détail par critère s'affiche dès que les locataires le renseignent dans leur avis.")}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <p className="flex items-start gap-2 mt-6 pt-5 border-t border-cream-line text-[12.5px] text-clay-500 leading-relaxed">
+                  <Icon name="check-circle" size={13} className="text-leaf mt-0.5 shrink-0" />
+                  {t('Un avis est « vérifié » quand son auteur a réellement loué le logement via JIGISO.')}
                 </p>
               </div>
-            </div>
-
-            <div className="space-y-3.5 mt-6">
-              {CRITERIA.map(([label, key]) => {
-                const v = reviewStats?.criteria?.[key];
-                return (
-                  <div key={key} className="flex items-center gap-4">
-                    <span className="text-[13px] text-clay-600 w-[150px] shrink-0">{t(label)}</span>
-                    <span className="flex-1 h-1.5 rounded-pill bg-cream-line overflow-hidden">
-                      <span className="block h-full rounded-pill bg-gold transition-all duration-700"
-                        style={{ width: v ? `${(v / 5) * 100}%` : '0%' }} />
-                    </span>
-                    <span className="font-mono text-[12px] text-clay-500 w-8 text-right">
-                      {v ? v.toFixed(1).replace('.', ',') : '—'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+            );
+          })()}
         </div>
       </section>
 

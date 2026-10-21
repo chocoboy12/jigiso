@@ -52,6 +52,7 @@ class AppState extends ChangeNotifier {
   Future<void> load() async {
     loading = true;
     notifyListeners();
+    await Api.preparerVisiteur();
     try { config = await Api.appConfig(); } catch (_) {}
 
     if (!_sessionReprise) {
@@ -73,7 +74,8 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      properties = await Api.properties(place: place.query);
+      // La ville par défaut n'est pas un choix de la personne : pas une recherche
+      properties = await Api.properties(place: place.query, auto: place.kind == 'bamako');
       offline = false;
     } catch (_) {
       properties = [];
@@ -89,7 +91,7 @@ class AppState extends ChangeNotifier {
   Future<void> refreshProperties() async {
     if (loading) return;
     try {
-      properties = await Api.properties(place: place.query);
+      properties = await Api.properties(place: place.query, auto: true);
       offline = false;
       notifyListeners();
     } catch (_) {/* réseau absent : on garde ce qui est affiché */}

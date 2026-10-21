@@ -299,80 +299,22 @@ const CITIES = [
  * bandeau éditorial). Ce sont des photos réelles du Mali, en 1920 px.
  */
 
-/* ── Photos Unsplash ───────────────────────────────────────
- * Licence Unsplash : usage commercial libre, attribution non exigée. On
- * crédite quand même l'auteur, par correction et parce que la page
- * /credits-photos existe déjà.
- *
- * ATTENTION : ces photos ne sont PAS prises au Mali. Leurs légendes restent
- * donc génériques — on ne prétend jamais qu'une villa d'Unsplash se trouve à
- * Bamako. Elles servent d'images d'ambiance, pas de preuve.
- */
-const UNSPLASH = (id) => `https://images.unsplash.com/${id}?w=1600&q=80&fm=jpg&fit=max`;
-
-const PHOTOS_AMBIANCE = {
-  villaLounge: {
-    url: UNSPLASH('photo-1613977257363-707ba9348227'),
-    credit: 'John Fornander', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/Id7u0EkTjBE',
-    caption: 'Villa moderne, terrasse et piscine',
-  },
-  villaPiscineJour: {
-    url: UNSPLASH('photo-1512917774080-9991f1c4c750'),
-    credit: 'Frames For Your Heart', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/2d4lAQAlbDA',
-    caption: 'Résidence contemporaine au bord du bassin',
-  },
-  villaBeton: {
-    url: UNSPLASH('photo-1613490493576-7fde63acd811'),
-    credit: 'Avi Werde', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/hHz4yrvxwlA',
-    caption: 'Architecture en béton clair',
-  },
-  salonOuvert: {
-    url: UNSPLASH('photo-1741764014072-68953e93cd48'),
-    credit: 'Melrose By The Lake', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/43vHzsfrmxk',
-    caption: 'Séjour ouvert sur la cuisine',
-  },
-  salonVert: {
-    url: UNSPLASH('photo-1738168246881-40f35f8aba0a'),
-    credit: 'Prydumano Design', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/VZ2z8ozzy10',
-    caption: 'Séjour meublé, grandes ouvertures',
-  },
-  chambre: {
-    url: UNSPLASH('photo-1638454668466-e8dbd5462f20'),
-    credit: 'Lotus Design N Print', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/WDUtNbot6Qw',
-    caption: 'Chambre avec bureau et vue',
-  },
-  cuisineClaire: {
-    url: UNSPLASH('photo-1715985160053-d339e8b6eb94'),
-    credit: 'Gerda Kauks', license: 'Unsplash',
-    creditUrl: 'https://unsplash.com/photos/KYM5QsbRsxk',
-    caption: 'Cuisine équipée',
-  },
-};
-
-Object.assign(PHOTOS, PHOTOS_AMBIANCE);
 
 /**
  * Photos mises en avant sur la page d'accueil.
  *
- * Uniquement des logements : c'est ce que vendent les annonces. Les monuments
- * et scènes de rue restent dans le catalogue mais ne sont plus en vitrine —
- * une personne qui cherche un toit veut voir des maisons, pas une mosquée.
+ * Uniquement des logements, et uniquement des photos réellement prises au
+ * Mali, aux lieux indiqués par leur légende. Les photos d'ambiance
+ * d'Unsplash (villas et intérieurs pris ailleurs) ont été retirées : sur un
+ * site qui promet de vrais logements, une villa étrangère en vitrine
+ * contredisait la promesse.
  *
- * Toutes ces photos sont vérifiées, libres de droits, et créditées sur la
- * page /credits-photos comme l'exige leur licence.
+ * Toutes ces photos sont libres de droits (Wikimedia Commons) et créditées
+ * sur la page /credits-photos comme l'exige leur licence.
  */
 const SHOWCASE = [
-  // Deux photos réellement prises au Mali, pour l'ancrage local…
-  'bamakoVillasAeriennes', 'nigerRives',
-  // …et quatre photos d'ambiance professionnelles, aux légendes génériques :
-  // extérieur, séjour, chambre, cuisine — le parcours d'une visite.
-  'villaLounge', 'salonOuvert', 'chambre', 'cuisineClaire',
+  'bamakoVillasAeriennes', 'citeNigerVilla', 'citeNigerImmeuble',
+  'facadeSiby', 'nigerRives', 'citeNigerEntree',
 ].map(k => ({ key: k, ...PHOTOS[k] }));
 
 module.exports = { PHOTOS, CITIES, SHOWCASE };

@@ -1,4 +1,5 @@
 const Favorite = require('../models/Favorite');
+const Interaction = require('../models/Interaction');
 
 // GET /api/favorites
 exports.getFavorites = async (req, res) => {
@@ -23,6 +24,7 @@ exports.addFavorite = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Déjà dans vos favoris.' });
     }
     const favorite = await Favorite.create({ user: req.user._id, property: req.params.propertyId });
+    Interaction.noter(req, req.params.propertyId, 'favorite');   // nourrit les recommandations
     res.status(201).json({ success: true, message: 'Ajouté aux favoris!', favorite });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });

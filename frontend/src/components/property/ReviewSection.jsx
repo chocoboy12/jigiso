@@ -7,6 +7,14 @@ import toast from 'react-hot-toast';
 import { useT } from '../../context/LanguageContext';
 
 // Composant étoiles interactif
+export const CRITERES_AVIS = [
+  ['cleanliness', 'Propreté'],
+  ['accuracy', "Conformité à l'annonce"],
+  ['communication', 'Communication'],
+  ['location', 'Emplacement'],
+  ['value', 'Rapport qualité-prix'],
+];
+
 export function StarRating({ value = 0, onChange, size = 20, readOnly = false }) {
   const [hover, setHover] = useState(0);
 
@@ -43,7 +51,7 @@ export default function ReviewSection({ propertyId, ownerId }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ rating: 0, comment: '' });
+  const [form, setForm] = useState({ rating: 0, ratings: {}, comment: '' });
 
   useEffect(() => {
     if (!propertyId) return;
@@ -68,7 +76,7 @@ export default function ReviewSection({ propertyId, ownerId }) {
       const newAvg = ((stats.avgRating * stats.numReviews) + form.rating) / (stats.numReviews + 1);
       setStats({ avgRating: newAvg, numReviews: stats.numReviews + 1 });
       setShowForm(false);
-      setForm({ rating: 0, comment: '' });
+      setForm({ rating: 0, ratings: {}, comment: '' });
       toast.success('Avis publié. Merci !');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Erreur');
@@ -120,6 +128,19 @@ export default function ReviewSection({ propertyId, ownerId }) {
           <div className="mb-3">
             <label className="label">Note globale *</label>
             <StarRating value={form.rating} onChange={r => setForm(p => ({ ...p, rating: r }))} size={28} />
+          </div>
+          {/* Les cinq critères affichés sur la page d'accueil (facultatifs) */}
+          <div className="mb-4">
+            <label className="label">Détail <span className="font-normal text-gray-400">(facultatif)</span></label>
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 mt-1">
+              {CRITERES_AVIS.map(([cle, libelle]) => (
+                <div key={cle} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-600">{libelle}</span>
+                  <StarRating value={form.ratings[cle] || 0} size={18}
+                    onChange={r => setForm(p => ({ ...p, ratings: { ...p.ratings, [cle]: r } }))} />
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <label className="label">Commentaire</label>

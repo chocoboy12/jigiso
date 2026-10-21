@@ -84,6 +84,7 @@ app.use('/uploads', (req, res, next) => {
 app.use('/api/auth',            require('./routes/auth.routes'));
 app.use('/api/verification',    require('./routes/verification.routes'));
 app.use('/api/properties',      require('./routes/property.routes'));
+app.use('/api/recommendations', require('./routes/recommendation.routes'));
 app.use('/api/cities',          require('./routes/city.routes'));
 app.use('/api/geocode',         require('./routes/geocode.routes'));
 app.use('/api/insights',        require('./routes/insights.routes'));
