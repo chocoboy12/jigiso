@@ -88,6 +88,19 @@ const userSchema = new mongoose.Schema({
     rejectionReason: { type: String, maxlength: 500 },
   },
 
+  /* ── Disponibilités pour les visites (propriétaire) ────────
+     Heures de Bamako (GMT, sans heure d'été). Tant que le propriétaire
+     n'a rien réglé (`configure` faux), les valeurs par défaut s'appliquent :
+     du lundi au samedi, 9 h – 18 h, créneaux d'une heure. */
+  visitAvailability: {
+    configure: { type: Boolean, default: false },
+    jours: { type: [Number], default: [1, 2, 3, 4, 5, 6] },   // 0 = dimanche
+    debut: { type: Number, default: 9, min: 7, max: 19 },
+    fin:   { type: Number, default: 18, min: 8, max: 20 },
+    duree: { type: Number, enum: [30, 60], default: 60 },     // minutes
+    joursBloques: { type: [String], default: [] },            // 'AAAA-MM-JJ'
+  },
+
   /* ── Sécurité du compte ────────────────────────────────── */
   // Incrémenté au changement de mot de passe / déconnexion globale :
   // invalide immédiatement tous les jetons émis avant.

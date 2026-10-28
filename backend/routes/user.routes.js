@@ -7,6 +7,7 @@ const { writeLimiter } = require('../middleware/rateLimit');
 const { uploadProfileImage } = require('../config/cloudinary');
 
 router.get('/profile', protect, getProfile);
+router.get('/activity', protect, require('../controllers/activity.controller').getActivity);
 
 // Une tentative d'écriture sur role / emailVerified / ownerVerification…
 // est refusée ET journalisée : c'est un signal de fraude, pas un détail.

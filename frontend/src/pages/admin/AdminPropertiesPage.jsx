@@ -19,7 +19,8 @@ export default function AdminPropertiesPage() {
   const fetchProperties = async () => {
     setLoading(true);
     try {
-      const { data } = await adminAPI.getProperties({ status: statusFilter });
+      // « À examiner » : file triée par risque (moyen et élevé), en attente ou publiées
+      const { data } = await adminAPI.getProperties(statusFilter === 'risque' ? { risque: 'moyen' } : { status: statusFilter });
       setProperties(data.properties);
       setTotal(data.total);
     } catch { toast.error('Erreur'); }
@@ -54,13 +55,14 @@ export default function AdminPropertiesPage() {
     } catch (err) { toast.error(err.response?.data?.message || 'Suppression impossible'); }
   };
 
-  // Annonces publiées avant l'arrivée du score : calcul à la demande
+  /* Relance l'analyse sur toutes les annonces en attente ou publiées : une
+     photo publiée hier peut révéler aujourd'hui une copie. */
   const [calculRisque, setCalculRisque] = useState(false);
   const calculerRisques = async () => {
     setCalculRisque(true);
     try {
       const { data } = await adminAPI.refreshRisks();
-      toast.success(`${data.updated} annonce${data.updated > 1 ? 's' : ''} évaluée${data.updated > 1 ? 's' : ''}`);
+      toast.success(`${data.updated} annonce${data.updated > 1 ? 's' : ''} analysée${data.updated > 1 ? 's' : ''} · ${data.aExaminer} à examiner`);
       fetchProperties();
     } catch { toast.error('Calcul impossible'); }
     finally { setCalculRisque(false); }
@@ -68,6 +70,7 @@ export default function AdminPropertiesPage() {
 
   const statusButtons = [
     { val: '', icon: 'apps', label: 'Tous' },
+    { val: 'risque', icon: 'exclamation', label: 'À examiner' },
     { val: 'pending', icon: 'clock', label: 'En attente' },
     { val: 'approved', icon: 'check-circle', label: 'Approuvés' },
     { val: 'rejected', icon: 'cross-circle', label: 'Refusés' },
@@ -80,14 +83,20 @@ export default function AdminPropertiesPage() {
         <h1 className="font-display font-bold text-3xl text-gray-800">Logements</h1>
         <div className="flex flex-wrap items-center justify-between gap-3 mt-1">
           <p className="text-gray-500">{total} logement{total !== 1 ? 's' : ''} au total</p>
-          {properties.some(p => !p.risk) && (
-            <button type="button" onClick={calculerRisques} disabled={calculRisque}
-              className="text-sm font-semibold text-gold-deep hover:text-gold disabled:opacity-50">
-              {calculRisque ? 'Calcul en cours…' : 'Calculer le score de risque des annonces existantes'}
-            </button>
-          )}
+          <button type="button" onClick={calculerRisques} disabled={calculRisque}
+            className="text-sm font-semibold text-gold-deep hover:text-gold disabled:opacity-50">
+            {calculRisque ? 'Analyse en cours…' : 'Relancer l’analyse anti-arnaque'}
+          </button>
         </div>
       </div>
+
+      {statusFilter === 'risque' && (
+        <p className="mb-6 text-[13.5px] text-clay-600 bg-gold/10 border border-gold/30 rounded-xl px-4 py-3 max-w-[80ch]">
+          Annonces dont l’analyse a relevé des signaux (photos déjà vues ailleurs, doublons, loyer anormal,
+          rythme de publication inhabituel…), la plus risquée en premier. Ce sont des <strong>indices à vérifier</strong>,
+          pas des preuves : beaucoup ont une explication honnête. Le propriétaire ne voit pas ce score ; vous seul décidez.
+        </p>
+      )}
 
       {/* Filtres */}
       <div className="flex flex-wrap gap-2 mb-6">

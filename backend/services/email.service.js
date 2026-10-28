@@ -1,5 +1,5 @@
 /**
- * MaliRent — Service Email
+ * JIGISO — Service Email
  * Nodemailer + Gmail SMTP
  * Admin: goitaaboubacar6@gmail.com
  */
@@ -80,13 +80,16 @@ exports.verifyConnection = async () => {
   }
 };
 
-// Email de l'admin MaliRent
+// Email de l'admin JIGISO
 const ADMIN_EMAIL = process.env.ADMIN_NOTIFICATION_EMAIL || 'goitaaboubacar6@gmail.com';
 const FROM_NAME = 'JIGISO';
 const FROM_EMAIL = process.env.MAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || 'noreply@jigiso.ml';
 
 // Template HTML de base
-const baseTemplate = (content, title = 'MaliRent') => `
+/* Adresse publique du site, pour les liens des e-mails (localhost en développement) */
+const SITE = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+
+const baseTemplate = (content, title = 'JIGISO') => `
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -137,9 +140,9 @@ const baseTemplate = (content, title = 'MaliRent') => `
       ${content}
     </div>
     <div class="footer">
-      <p>Cet email a été envoyé par MaliRent · Plateforme immobilière du Mali<br>
-      © 2024 MaliRent — Fait avec ❤️ au Mali<br>
-      <a href="http://localhost:5173" style="color: #C8941A;">www.malirent.ml</a></p>
+      <p>Cet email a été envoyé par JIGISO · Plateforme immobilière du Mali<br>
+      © ${new Date().getFullYear()} JIGISO — Fait avec ❤️ au Mali<br>
+      <a href="${SITE}" style="color: #C8941A;">${SITE.replace(/^https?:\/\//, '')}</a></p>
     </div>
   </div>
 </body>
@@ -196,18 +199,18 @@ exports.sendMessageNotification = async ({ senderName, receiverEmail, receiverNa
   const html = baseTemplate(`
     <h1>💬 Nouveau message de ${senderName}</h1>
     <p>Bonjour <strong>${receiverName}</strong>,</p>
-    <p>Vous avez reçu un nouveau message sur MaliRent${propertyTitle ? ` concernant le logement <strong>${propertyTitle}</strong>` : ''} :</p>
+    <p>Vous avez reçu un nouveau message sur JIGISO${propertyTitle ? ` concernant le logement <strong>${propertyTitle}</strong>` : ''} :</p>
     <div class="message-bubble">
       <p>"${content}"</p>
     </div>
-    <a href="http://localhost:5173/messages" class="btn">Répondre au message</a>
+    <a href="${SITE}/messages" class="btn">Répondre au message</a>
     <hr class="divider">
-    <p style="font-size:13px;color:#888;">Connectez-vous à votre compte MaliRent pour répondre directement à ce message.</p>
+    <p style="font-size:13px;color:#888;">Connectez-vous à votre compte JIGISO pour répondre directement à ce message.</p>
   `, `Nouveau message de ${senderName}`);
 
   return sendEmail({
     to: receiverEmail,
-    subject: `💬 Nouveau message de ${senderName} — MaliRent`,
+    subject: `💬 Nouveau message de ${senderName} — JIGISO`,
     html,
   });
 };
@@ -230,12 +233,12 @@ exports.sendRentalRequestToOwner = async ({ ownerEmail, ownerName, tenantName, t
       <tr><td>⏳ Durée</td><td>${duration}</td></tr>
     </table>
     ${message ? `<div class="message-bubble"><p>"${message}"</p></div>` : ''}
-    <a href="http://localhost:5173/mes-demandes" class="btn">Gérer cette demande</a>
+    <a href="${SITE}/mes-demandes" class="btn">Gérer cette demande</a>
   `, 'Nouvelle demande de location');
 
   return sendEmail({
     to: ownerEmail,
-    subject: `🏠 Nouvelle demande pour "${propertyTitle}" — MaliRent`,
+    subject: `🏠 Nouvelle demande pour "${propertyTitle}" — JIGISO`,
     html,
   });
 };
@@ -258,10 +261,10 @@ exports.sendRentalResponseToTenant = async ({ tenantEmail, tenantName, ownerName
     <div class="info-box">
       <p>✅ Contactez le propriétaire pour finaliser les détails de votre location.</p>
     </div>
-    <a href="http://localhost:5173/messages" class="btn btn-green">Contacter le propriétaire</a>
+    <a href="${SITE}/messages" class="btn btn-green">Contacter le propriétaire</a>
     ` : `
     <p>Ne vous découragez pas ! D'autres logements correspondent peut-être à vos besoins.</p>
-    <a href="http://localhost:5173/rechercher" class="btn">Chercher d'autres logements</a>
+    <a href="${SITE}/rechercher" class="btn">Chercher d'autres logements</a>
     `}
   `, isAccepted ? 'Demande acceptée' : 'Demande refusée');
 
@@ -294,7 +297,7 @@ exports.sendReservationConfirmed = async ({ tenantEmail, tenantName, ownerName, 
       <p><strong>Message du propriétaire :</strong><br>"${ownerResponse}"</p>
     </div>` : ''}
     <p>Prenez contact avec le propriétaire pour convenir de la remise des clés.</p>
-    <a href="http://localhost:5173/messages" class="btn btn-green">Contacter le propriétaire</a>
+    <a href="${SITE}/messages" class="btn btn-green">Contacter le propriétaire</a>
   `, 'Logement réservé');
 
   return sendEmail({
@@ -317,7 +320,7 @@ exports.sendReservationCancelled = async ({ to, recipientName, otherName, proper
         ? '✅ Votre logement est de nouveau visible dans les recherches et peut recevoir de nouvelles demandes.'
         : 'Le logement est de nouveau disponible pour tout le monde.'}</p>
     </div>
-    <a href="http://localhost:5173/${byTenant ? 'mes-demandes' : 'rechercher'}" class="btn">
+    <a href="${SITE}/${byTenant ? 'mes-demandes' : 'rechercher'}" class="btn">
       ${byTenant ? 'Voir mes demandes' : 'Chercher un autre logement'}
     </a>
   `, 'Réservation annulée');
@@ -330,17 +333,17 @@ exports.sendPropertyApproved = async ({ ownerEmail, ownerName, propertyTitle, pr
   const html = baseTemplate(`
     <h1>✅ Votre annonce est en ligne !</h1>
     <p>Bonjour <strong>${ownerName}</strong>,</p>
-    <p>Bonne nouvelle ! Votre annonce <strong>"${propertyTitle}"</strong> a été <span class="badge">validée et publiée</span> sur MaliRent.</p>
+    <p>Bonne nouvelle ! Votre annonce <strong>"${propertyTitle}"</strong> a été <span class="badge">validée et publiée</span> sur JIGISO.</p>
     <div class="info-box">
-      <p>🎉 Votre logement est maintenant visible par des milliers de locataires au Mali !</p>
+      <p>🎉 Votre logement est maintenant visible par les locataires qui cherchent sur JIGISO.</p>
     </div>
-    <a href="http://localhost:5173/logements/${propertyId}" class="btn btn-green">Voir mon annonce</a>
+    <a href="${SITE}/logements/${propertyId}" class="btn btn-green">Voir mon annonce</a>
     <p style="font-size:13px;color:#888;margin-top:16px;">Conseils : Répondez rapidement aux demandes pour maximiser vos chances de louer.</p>
   `, 'Annonce approuvée');
 
   return sendEmail({
     to: ownerEmail,
-    subject: `✅ Votre annonce "${propertyTitle}" est en ligne — MaliRent`,
+    subject: `✅ Votre annonce "${propertyTitle}" est en ligne — JIGISO`,
     html,
   });
 };
@@ -355,7 +358,7 @@ exports.sendPropertyRejected = async ({ ownerEmail, ownerName, propertyTitle, re
       <p>"${reason || 'Annonce non conforme à nos conditions d\'utilisation.'}"</p>
     </div>
     <p>Vous pouvez modifier votre annonce et la soumettre à nouveau.</p>
-    <a href="http://localhost:5173/mes-annonces" class="btn btn-red">Modifier mon annonce</a>
+    <a href="${SITE}/mes-annonces" class="btn btn-red">Modifier mon annonce</a>
     <hr class="divider">
     <p style="font-size:13px;color:#888;">Besoin d'aide ? Contactez-nous à <a href="mailto:${ADMIN_EMAIL}" style="color:#C8941A;">${ADMIN_EMAIL}</a></p>
   `, 'Annonce refusée');
@@ -371,7 +374,7 @@ exports.sendPropertyRejected = async ({ ownerEmail, ownerName, propertyTitle, re
 exports.sendWelcomeEmail = async ({ userEmail, userName, role }) => {
   const isOwner = role === 'owner';
   const html = baseTemplate(`
-    <h1>Bienvenue sur MaliRent, ${userName} ! 🎉</h1>
+    <h1>Bienvenue sur JIGISO, ${userName} ! 🎉</h1>
     <p>Votre compte <strong>${isOwner ? 'propriétaire' : 'locataire'}</strong> a été créé avec succès.</p>
     <div class="info-box">
       <p>${isOwner
@@ -379,16 +382,16 @@ exports.sendWelcomeEmail = async ({ userEmail, userName, role }) => {
         : '🔍 <strong>Locataire</strong> — Vous pouvez maintenant chercher des logements, envoyer des demandes et sauvegarder vos favoris.'
       }</p>
     </div>
-    <a href="${isOwner ? 'http://localhost:5173/publier' : 'http://localhost:5173/rechercher'}" class="btn">
+    <a href="${isOwner ? SITE + '/publier' : SITE + '/rechercher'}" class="btn">
       ${isOwner ? '🚀 Publier mon premier logement' : '🔍 Chercher un logement'}
     </a>
     <hr class="divider">
     <p style="font-size:13px;color:#888;">Des questions ? Contactez-nous : <a href="mailto:${ADMIN_EMAIL}" style="color:#C8941A;">${ADMIN_EMAIL}</a></p>
-  `, 'Bienvenue sur MaliRent');
+  `, 'Bienvenue sur JIGISO');
 
   return sendEmail({
     to: userEmail,
-    subject: `🎉 Bienvenue sur MaliRent, ${userName} !`,
+    subject: `🎉 Bienvenue sur JIGISO, ${userName} !`,
     html,
   });
 };
@@ -405,7 +408,7 @@ exports.sendContactToAdmin = async ({ senderName, senderEmail, senderPhone, subj
   };
 
   const html = baseTemplate(`
-    <h1>📩 Nouveau message via MaliRent</h1>
+    <h1>📩 Nouveau message via JIGISO</h1>
     <div class="info-box">
       <p><strong>Type :</strong> ${typeLabels[type] || type}<br>
       <strong>Sujet :</strong> ${subject}</p>
@@ -420,12 +423,12 @@ exports.sendContactToAdmin = async ({ senderName, senderEmail, senderPhone, subj
       <p>${messageContent.replace(/\n/g, '<br>')}</p>
     </div>
     <a href="mailto:${senderEmail}?subject=Re: ${subject}" class="btn">Répondre directement</a>
-    <p style="font-size:12px;color:#aaa;margin-top:12px;">Reçu le ${new Date().toLocaleString('fr-FR')} via le formulaire de contact MaliRent</p>
+    <p style="font-size:12px;color:#aaa;margin-top:12px;">Reçu le ${new Date().toLocaleString('fr-FR')} via le formulaire de contact JIGISO</p>
   `, `Contact: ${subject}`);
 
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `[MaliRent Contact] ${typeLabels[type] || ''} — ${subject}`,
+    subject: `[JIGISO Contact] ${typeLabels[type] || ''} — ${subject}`,
     html,
   });
 };
@@ -443,19 +446,19 @@ exports.sendReportToAdmin = async ({ reporterName, propertyTitle, reason, descri
 
   const html = baseTemplate(`
     <h1>🚩 Nouveau signalement</h1>
-    <p>Un utilisateur a signalé une annonce sur MaliRent.</p>
+    <p>Un utilisateur a signalé une annonce sur JIGISO.</p>
     <table>
       <tr><td>👤 Signalé par</td><td>${reporterName}</td></tr>
       <tr><td>🏠 Logement</td><td>${propertyTitle}</td></tr>
       <tr><td>⚠️ Raison</td><td><span class="badge-warn">${reasonLabels[reason] || reason}</span></td></tr>
     </table>
     ${description ? `<div class="message-bubble"><p>"${description}"</p></div>` : ''}
-    <a href="http://localhost:5173/admin/signalements" class="btn btn-red">Traiter ce signalement</a>
+    <a href="${SITE}/admin/signalements" class="btn btn-red">Traiter ce signalement</a>
   `, 'Nouveau signalement');
 
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `🚩 [MaliRent] Nouveau signalement — ${propertyTitle}`,
+    subject: `🚩 [JIGISO] Nouveau signalement — ${propertyTitle}`,
     html,
   });
 };
@@ -470,12 +473,12 @@ exports.sendNewUserToAdmin = async ({ userName, userEmail, userRole }) => {
       <tr><td>Rôle</td><td><span class="${userRole === 'owner' ? 'badge' : 'badge-warn'}">${userRole === 'owner' ? '🏠 Propriétaire' : '🔍 Locataire'}</span></td></tr>
       <tr><td>Date</td><td>${new Date().toLocaleString('fr-FR')}</td></tr>
     </table>
-    <a href="http://localhost:5173/admin/utilisateurs" class="btn">Voir dans l'admin</a>
+    <a href="${SITE}/admin/utilisateurs" class="btn">Voir dans l'admin</a>
   `, 'Nouvel utilisateur');
 
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `👤 [MaliRent] Nouvel inscrit : ${userName} (${userRole})`,
+    subject: `👤 [JIGISO] Nouvel inscrit : ${userName} (${userRole})`,
     html,
   });
 };
@@ -491,12 +494,12 @@ exports.sendNewPropertyToAdmin = async ({ ownerName, propertyTitle, city, type }
       <tr><td>📍 Ville</td><td>${city}</td></tr>
       <tr><td>🏷️ Type</td><td>${type}</td></tr>
     </table>
-    <a href="http://localhost:5173/admin/logements" class="btn">Valider l'annonce</a>
+    <a href="${SITE}/admin/logements" class="btn">Valider l'annonce</a>
   `, 'Nouvelle annonce');
 
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `🏠 [MaliRent] Nouvelle annonce à valider — ${propertyTitle}`,
+    subject: `🏠 [JIGISO] Nouvelle annonce à valider — ${propertyTitle}`,
     html,
   });
 };
@@ -524,16 +527,16 @@ exports.sendDirectContactToOwner = async ({
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;">
       <a href="mailto:${tenantEmail}?subject=Re: ${subject}" class="btn btn-green">Répondre par email</a>
-      <a href="http://localhost:5173/messages" class="btn">Répondre sur MaliRent</a>
+      <a href="${SITE}/messages" class="btn">Répondre sur JIGISO</a>
     </div>
-    ${propertyId ? `<a href="http://localhost:5173/logements/${propertyId}" style="color:#C8941A;font-size:13px;">Voir l'annonce concernée →</a>` : ''}
+    ${propertyId ? `<a href="${SITE}/logements/${propertyId}" style="color:#C8941A;font-size:13px;">Voir l'annonce concernée →</a>` : ''}
     <hr class="divider">
-    <p style="font-size:12px;color:#aaa;">Message reçu via MaliRent le ${new Date().toLocaleString('fr-FR')}</p>
+    <p style="font-size:12px;color:#aaa;">Message reçu via JIGISO le ${new Date().toLocaleString('fr-FR')}</p>
   `, `Message de ${tenantName}`);
 
   return sendEmail({
     to: ownerEmail,
-    subject: `📩 [MaliRent] Message de ${tenantName} — "${subject}"`,
+    subject: `📩 [JIGISO] Message de ${tenantName} — "${subject}"`,
     html,
   });
 };
@@ -550,10 +553,10 @@ exports.sendContactConfirmationToTenant = async ({
       <p><strong>Sujet :</strong> ${subject}<br>
       Le propriétaire sera notifié par email et vous répondra directement.</p>
     </div>
-    <p>Vous pouvez également échanger des messages directement sur MaliRent :</p>
-    <a href="http://localhost:5173/messages" class="btn">Voir mes messages</a>
+    <p>Vous pouvez également échanger des messages directement sur JIGISO :</p>
+    <a href="${SITE}/messages" class="btn">Voir mes messages</a>
     <p style="font-size:13px;color:#888;margin-top:16px;">Continuez à explorer d'autres logements pendant que vous attendez une réponse.</p>
-    <a href="http://localhost:5173/rechercher" style="color:#C8941A;font-size:13px;">Voir d'autres logements →</a>
+    <a href="${SITE}/rechercher" style="color:#C8941A;font-size:13px;">Voir d'autres logements →</a>
   `, 'Message envoyé');
 
   return sendEmail({
@@ -614,4 +617,74 @@ exports.sendKycDecision = async ({ userEmail, userName, approved, reason }) => {
              <p>Vous pouvez déposer un nouveau dossier depuis votre espace.</p>`}
       </div>`,
   });
+};
+
+// ─── Alerte : un logement correspond aux critères ────────
+exports.sendAlertMatch = async ({ to, name, alertName, property }) => {
+  const prix = Number(property.price || 0).toLocaleString('fr-FR');
+  const html = baseTemplate(`
+    <h1>🔔 Un logement correspond à votre alerte</h1>
+    <p>Bonjour <strong>${name}</strong>,</p>
+    <p>Une nouvelle annonce correspond à votre alerte <strong>« ${alertName} »</strong> :</p>
+    <div class="info-box">
+      <p><strong>${property.title}</strong><br>
+      ${[property.neighborhood, property.city].filter(Boolean).join(', ')}<br>
+      ${prix} FCFA / ${property.pricePeriod || 'mois'}${property.bedrooms ? ` · ${property.bedrooms} chambre${property.bedrooms > 1 ? 's' : ''}` : ''}</p>
+    </div>
+    <a href="${SITE}/logements/${property._id}" class="btn btn-green">Voir l'annonce</a>
+    <p style="font-size:13px;color:#888;margin-top:16px;">Vous recevez cet e-mail parce que vous avez créé cette alerte. Vous pouvez la mettre en pause ou la supprimer depuis votre espace, rubrique Alertes.</p>
+  `, 'Nouvelle annonce pour vous');
+  return sendEmail({ to, subject: `🔔 ${property.title} — correspond à votre alerte`, html });
+};
+
+// ─── Visites ─────────────────────────────────────────────
+/** Texte saisi par un utilisateur, rendu inoffensif dans le HTML de l'e-mail */
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+exports.sendVisitProposed = async ({ to, ownerName, tenantName, propertyTitle, quand, note }) => {
+  const html = baseTemplate(`
+    <h1>📅 Demande de visite</h1>
+    <p>Bonjour <strong>${esc(ownerName)}</strong>,</p>
+    <p><strong>${esc(tenantName)}</strong> souhaite visiter <strong>« ${esc(propertyTitle)} »</strong> :</p>
+    <div class="info-box"><p><strong>${quand}</strong>${note ? `<br>« ${esc(note)} »` : ''}</p></div>
+    <p>Confirmez ou refusez ce créneau depuis l'application JIGISO (Demandes → Visites).</p>
+    <a href="${SITE}/mes-demandes" class="btn">Répondre</a>
+  `, 'Demande de visite');
+  return sendEmail({ to, subject: `📅 Visite proposée — ${propertyTitle}`, html });
+};
+
+exports.sendVisitUpdate = async ({ to, name, propertyTitle, quand, evenement, parQui, reponse }) => {
+  const titres = {
+    confirmer: '✅ Visite confirmée', refuser: '❌ Visite refusée', annuler: '🚫 Visite annulée',
+    proposer: '🔁 Autre horaire proposé', accepter: '✅ Nouvel horaire accepté', deplacer: '🔁 Visite déplacée',
+  };
+  const phrases = {
+    confirmer: `${esc(parQui)} a confirmé la visite de « ${esc(propertyTitle)} ».`,
+    refuser: `${esc(parQui)} ne peut pas vous recevoir pour « ${esc(propertyTitle)} » à ce moment-là. Choisissez un autre créneau.`,
+    annuler: `${esc(parQui)} a annulé la visite de « ${esc(propertyTitle)} ».`,
+    proposer: `${esc(parQui)} ne peut pas à l'horaire demandé pour « ${esc(propertyTitle)} » et propose plutôt ce moment. Acceptez-le ou choisissez un autre créneau dans l'application.`,
+    accepter: `${esc(parQui)} a accepté le nouvel horaire pour « ${esc(propertyTitle)} ». La visite est confirmée.`,
+    deplacer: `${esc(parQui)} a déplacé la visite de « ${esc(propertyTitle)} ». Confirmez le nouvel horaire ou proposez-en un autre.`,
+  };
+  const html = baseTemplate(`
+    <h1>${titres[evenement] || 'Visite mise à jour'}</h1>
+    <p>Bonjour <strong>${esc(name)}</strong>,</p>
+    <p>${phrases[evenement] || ''}</p>
+    <div class="info-box"><p><strong>${quand}</strong>${reponse ? `<br>« ${esc(reponse)} »` : ''}</p></div>
+    <a href="${SITE}/mes-demandes" class="btn">Voir mes visites</a>
+  `, 'Visite');
+  return sendEmail({ to, subject: `${titres[evenement] || 'Visite'} — ${propertyTitle}`, html });
+};
+
+/** Rappel avant une visite confirmée (la veille, puis deux heures avant) */
+exports.sendVisitReminder = async ({ to, name, propertyTitle, quand, ou, avec, tel, proche }) => {
+  const html = baseTemplate(`
+    <h1>⏰ ${proche ? 'Visite dans deux heures' : 'Visite demain'}</h1>
+    <p>Bonjour <strong>${esc(name)}</strong>,</p>
+    <p>Rappel : visite de <strong>« ${esc(propertyTitle)} »</strong>${ou ? ` (${esc(ou)})` : ''} avec <strong>${esc(avec)}</strong>.</p>
+    <div class="info-box"><p><strong>${quand}</strong>${tel ? `<br>Téléphone : ${esc(tel)}` : ''}</p></div>
+    <p>Un empêchement ? Déplacez ou annulez la visite dans l'application pour prévenir l'autre personne.</p>
+    <a href="${SITE}/mes-demandes" class="btn">Voir la visite</a>
+  `, 'Rappel de visite');
+  return sendEmail({ to, subject: `⏰ Rappel de visite — ${propertyTitle}`, html });
 };

@@ -42,6 +42,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   double? lat, lng;
   int beds = 0, baths = 0;
   bool furnished = false, sending = false;
+  /// Adresse exacte publique ? Par défaut non : le public voit un secteur de ± 400 m
+  bool positionExacte = false;
   final amen = <String, bool>{for (final k in amenityKeys) k: false};
 
   // Contrat — mêmes champs que ContractForm du site (voir parseContract côté serveur)
@@ -107,11 +109,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     if (!_draftReady) return;
     final snap = {
       'step': step, 'title': title.text, 'price': price.text, 'area': area.text, 'desc': desc.text,
-      'type': type, 'beds': beds, 'baths': baths, 'furnished': furnished, 'lat': lat, 'lng': lng,
+      'type': type, 'beds': beds, 'baths': baths, 'furnished': furnished, 'lat': lat, 'lng': lng, 'exacte': positionExacte,
       'amen': amen, 'charges': charges.toList(),
       'contactPhone': contactPhone.text, 'contactWhatsapp': contactWhatsapp.text,
-      'place': place == null ? null : {'kind': place!.kind, 'commune': place!.commune, 'quartier': place!.quartier,
-          'region': place!.region, 'lat': place!.lat, 'lng': place!.lng},
+      'place': place?.toJson(),
       'contract': {for (final e in {
         'minDuration': minDuration, 'notice': notice, 'deposit': deposit, 'advance': advance, 'payDay': payDay,
         'obligations': obligations, 'termination': termination, 'rules': rules, 'extra': extra}.entries) e.key: e.value.text},
@@ -169,21 +170,15 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           step = (j['step'] as int? ?? 0).clamp(0, 2);
           type = j['type'] as String?;
           beds = j['beds'] as int? ?? 0; baths = j['baths'] as int? ?? 0;
-          furnished = j['furnished'] == true;
+          furnished = j['furnished'] == true; positionExacte = j['exacte'] == true;
           lat = (j['lat'] as num?)?.toDouble(); lng = (j['lng'] as num?)?.toDouble();
           (j['amen'] as Map? ?? {}).forEach((k, v) { if (amen.containsKey(k)) amen[k as String] = v == true; });
           charges..clear()..addAll(((j['charges'] as List?) ?? []).cast<String>());
           photos..clear()..addAll(((j['photos'] as List?) ?? []).cast<String>().map(File.new).where((f) => f.existsSync()));
-          place = pl == null ? null : switch (pl['kind']) {
-            'commune' => Place.commune(pl['commune'] as String?),
-            'quartier' => Place.quartier(pl['commune'] as String?, pl['quartier'] as String?),
-            'region' => Place.region(pl['region'] as String?),
-            'gps' => Place.gps((pl['lat'] as num?)?.toDouble(), (pl['lng'] as num?)?.toDouble()),
-            _ => const Place.bamako(),
-          };
+          place = pl == null ? null : Place.fromJson(pl);
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Brouillon repris là où vous vous étiez arrêté.'),
+          content: Text(tr(context, 'ap.draftBack')),
           duration: const Duration(seconds: 6),
           action: SnackBarAction(label: 'Recommencer', onPressed: _startOver),
         ));
@@ -217,8 +212,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _draftReady = true;
   }
   static const chargeLabels = {
-    'eau': 'Eau', 'electricite': 'Électricité', 'internet': 'Internet',
-    'ordures': 'Ramassage des ordures', 'gardiennage': 'Gardiennage', 'entretien': 'Entretien des parties communes',
+    'eau': 'ap.chEau', 'electricite': 'ap.chElec', 'internet': 'ap.chNet',
+    'ordures': 'ap.chTrash', 'gardiennage': 'ap.chGuard', 'entretien': 'ap.chUpkeep',
   };
 
   Future<void> _addPhotos(ImageSource src) async {
@@ -233,35 +228,35 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
   }
 
   String? get _missing {
-    if (photos.isEmpty) return 'Ajoutez au moins une photo';
+    if (photos.isEmpty) return tr(context, 'ap.e1');
     return _missingInfo ?? _missingContract;
   }
 
   String? get _missingInfo {
-    if (title.text.trim().isEmpty) return 'Ajoutez un titre';
-    if (type == null) return 'Choisissez le type';
-    if (place == null) return 'Choisissez la localisation';
-    if ((int.tryParse(price.text.replaceAll(' ', '')) ?? 0) <= 0) return 'Indiquez le loyer';
-    if (desc.text.trim().isEmpty) return 'Ajoutez une description';
-    if (_digits(contactPhone.text).length != 8) return 'Contact : numéro de téléphone à 8 chiffres';
+    if (title.text.trim().isEmpty) return tr(context, 'ap.e2');
+    if (type == null) return tr(context, 'ap.e3');
+    if (place == null) return tr(context, 'ap.e4');
+    if ((int.tryParse(price.text.replaceAll(' ', '')) ?? 0) <= 0) return tr(context, 'ap.e5');
+    if (desc.text.trim().isEmpty) return tr(context, 'ap.e6');
+    if (_digits(contactPhone.text).length != 8) return tr(context, 'ap.e7');
     final wa = _digits(contactWhatsapp.text);
-    if (wa.isNotEmpty && wa.length != 8) return 'Contact : numéro WhatsApp à 8 chiffres, ou laissez vide';
+    if (wa.isNotEmpty && wa.length != 8) return tr(context, 'ap.e8');
     return null;
   }
 
   /// Bornes identiques au serveur : sinon il refuse avec un message global.
   String? get _missingContract {
     int? n(TextEditingController c) => int.tryParse(c.text.trim());
-    if (minDuration.text.trim().isEmpty) return 'Contrat : indiquez la durée minimale';
-    if (notice.text.trim().isEmpty) return 'Contrat : indiquez le préavis';
+    if (minDuration.text.trim().isEmpty) return tr(context, 'ap.e9');
+    if (notice.text.trim().isEmpty) return tr(context, 'ap.e10');
     final d = n(payDay);
-    if (d == null || d < 1 || d > 31) return 'Contrat : jour de paiement entre 1 et 31';
+    if (d == null || d < 1 || d > 31) return tr(context, 'ap.e11');
     final cau = n(deposit);
-    if (cau == null || cau > 24) return 'Contrat : caution entre 0 et 24 mois';
+    if (cau == null || cau > 24) return tr(context, 'ap.e12');
     final av = n(advance);
-    if (av == null || av > 24) return 'Contrat : avance entre 0 et 24 mois';
-    if (obligations.text.trim().isEmpty) return 'Contrat : rédigez les obligations des parties';
-    if (termination.text.trim().isEmpty) return 'Contrat : rédigez les conditions de résiliation';
+    if (av == null || av > 24) return tr(context, 'ap.e13');
+    if (obligations.text.trim().isEmpty) return tr(context, 'ap.e14');
+    if (termination.text.trim().isEmpty) return tr(context, 'ap.e15');
     return null;
   }
 
@@ -314,6 +309,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           if (place!.region != null) 'region': place!.region!,
           'bedrooms': '$beds', 'bathrooms': '$baths', 'area': area.text.isEmpty ? '0' : area.text,
           'furnished': '$furnished',
+          'locationPrecision': positionExacte ? 'exact' : 'approx',
         },
         amenities: amen,
         contract: _contract,
@@ -327,12 +323,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       if (!mounted) return;
       AppScope.of(context).load();
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Annonce envoyée — en attente de validation par Jigiso')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr(context, 'ap.sent'))));
     } catch (e) {
       if (!mounted) return;
       _draftReady = true;
       setState(() => sending = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${tr(context, 'err.send')} $e')));
     }
   }
 
@@ -361,7 +357,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     _flushDraft();
     Navigator.pop(context);
     if (saved) {
-      messenger.showSnackBar(const SnackBar(content: Text('Brouillon enregistré — touchez « Publier » pour reprendre votre annonce.')));
+      messenger.showSnackBar(SnackBar(content: Text(tr(context, 'ap.draftSaved'))));
     }
   }
 
@@ -370,7 +366,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: J.surface,
         body: SafeArea(
           child: Column(children: [
             Padding(
@@ -379,13 +375,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
                 Row(children: [
                   IconButton(onPressed: _back,
                       icon: Icon(step == 0 ? Icons.close_rounded : Icons.arrow_back_rounded)),
-                  Expanded(child: Text('Nouvelle annonce', style: J.ui(18, w: FontWeight.w800))),
+                  Expanded(child: Text(tr(context, 'ap.new'), style: J.ui(18, w: FontWeight.w800))),
                   Text('${step + 1}/3', style: J.ui(13, c: J.leaf, w: FontWeight.w700)),
                 ]),
                 const SizedBox(height: 10),
                 ClipRRect(borderRadius: BorderRadius.circular(3), child: TweenAnimationBuilder<double>(
                   tween: Tween(end: (step + 1) / 3), duration: const Duration(milliseconds: 350),
-                  builder: (_, v, __) => LinearProgressIndicator(value: v, minHeight: 6, color: J.leaf, backgroundColor: const Color(0xFFE6F0EA)),
+                  builder: (_, v, __) => LinearProgressIndicator(value: v, minHeight: 6, color: J.leaf, backgroundColor: J.x(0xFFE6F0EA)),
                 )),
               ]),
             ),
@@ -405,14 +401,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
               decoration: BoxDecoration(color: J.leaf, borderRadius: BorderRadius.circular(18)),
               child: sending
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                  : Text(step == 0 ? (photos.isEmpty ? 'Ajouter des photos' : 'Continuer') : step == 1 ? 'Continuer · contrat' : 'Envoyer pour validation', style: J.ui(16, c: Colors.white, w: FontWeight.w700)),
+                  : Text(step == 0 ? (photos.isEmpty ? tr(context, 'ap.addPhotos') : tr(context, 'ap.continue')) : step == 1 ? tr(context, 'ap.continueContract') : tr(context, 'ap.submit'), style: J.ui(16, c: Colors.white, w: FontWeight.w700)),
             ),
           ),
         ),
       ));
 
   Widget _photosStep() => ListView(key: const ValueKey(0), padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: [
-        Text('Photos du logement', style: J.ui(24, w: FontWeight.w800)),
+        Text(tr(context, 'ap.photos'), style: J.ui(24, w: FontWeight.w800)),
         const SizedBox(height: 4),
         Text('Jusqu\'à $maxPhotos photos. La première sert de couverture — touchez une photo pour la mettre en couverture, glissez pour réordonner.',
             style: J.ui(14, c: J.clay500, w: FontWeight.w400, h: 1.5)),
@@ -426,7 +422,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         ),
         const SizedBox(height: 14),
         Row(children: [
-          Expanded(child: _srcBtn(Icons.photo_camera_outlined, 'Appareil photo', () => _addPhotos(ImageSource.camera))),
+          Expanded(child: _srcBtn(Icons.photo_camera_outlined, tr(context, 'ap.camera'), () => _addPhotos(ImageSource.camera))),
           const SizedBox(width: 10),
           Expanded(child: _srcBtn(Icons.photo_library_outlined, 'Galerie', () => _addPhotos(ImageSource.gallery))),
         ]),
@@ -444,8 +440,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
       );
 
   Widget _infoStep() => ListView(key: const ValueKey(1), padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: [
-        _label('Titre de l\'annonce'),
-        _field(title, 'Ex. Maison 3 chambres avec cour'),
+        _label(tr(context, 'ap.title')),
+        _field(title, tr(context, 'ap.titlePh')),
         const SizedBox(height: 16),
         _label('Type'),
         Wrap(spacing: 6, runSpacing: 6, children: [
@@ -460,16 +456,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           },
           child: Container(
             height: 58, padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(color: place != null ? const Color(0xFFF4F7F5) : const Color(0xFFF8F6F1), borderRadius: BorderRadius.circular(16),
+            decoration: BoxDecoration(color: place != null ? J.x(0xFFF4F7F5) : J.x(0xFFF8F6F1), borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: place != null ? J.leaf : J.soft, width: 1.5)),
             child: Row(children: [
               Icon(Icons.location_on_rounded, color: place != null ? J.leaf : J.clay300),
               const SizedBox(width: 10),
               Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Région · commune · quartier', style: J.ui(11, c: J.clay500)),
+                Text(tr(context, 'ap.placeSub'), style: J.ui(11, c: J.clay500)),
                 Text(place?.label ?? 'Choisir…', style: J.ui(14, w: FontWeight.w700)),
               ])),
-              const Icon(Icons.expand_more_rounded, color: J.clay500),
+              Icon(Icons.expand_more_rounded, color: J.clay500),
             ]),
           ),
         ),
@@ -481,49 +477,56 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           },
           child: Container(
             height: 48,
-            decoration: BoxDecoration(color: lat != null ? const Color(0xFFE6F0EA) : Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: lat != null ? J.leaf : J.soft, width: 1.5)),
+            decoration: BoxDecoration(color: lat != null ? J.x(0xFFE6F0EA) : J.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: lat != null ? J.leaf : J.soft, width: 1.5)),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(lat != null ? Icons.check_circle_rounded : Icons.my_location_rounded, size: 20, color: J.leaf),
               const SizedBox(width: 8),
-              Text(lat != null ? 'Position GPS enregistrée' : 'Je suis sur place : enregistrer la position GPS', style: J.ui(13, w: FontWeight.w700)),
+              Text(lat != null ? tr(context, 'ap.gpsOk') : tr(context, 'ap.gpsHere'), style: J.ui(13, w: FontWeight.w700)),
             ]),
           ),
         ),
+        if (lat != null)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero, value: positionExacte, activeThumbColor: J.leaf,
+            onChanged: (v) => setState(() => positionExacte = v),
+            title: Text(AppScope.of(context).t('add.exact'), style: J.ui(14.5, w: FontWeight.w700)),
+            subtitle: Text(AppScope.of(context).t('add.exactSub'), style: J.ui(12.5, c: J.clay500, h: 1.4)),
+          ),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Loyer / mois'), _field(price, '0', suffix: 'FCFA', number: true)])),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.rent')), _field(price, '0', suffix: 'FCFA', number: true)])),
           const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Surface'), _field(area, '0', suffix: 'm²', number: true)])),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.area')), _field(area, '0', suffix: 'm²', number: true)])),
         ]),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: _stepper('Chambres', beds, (v) => setState(() => beds = v))),
+          Expanded(child: _stepper(tr(context, 'ap.beds'), beds, (v) => setState(() => beds = v))),
           const SizedBox(width: 10),
-          Expanded(child: _stepper('Salles de bain', baths, (v) => setState(() => baths = v))),
+          Expanded(child: _stepper(tr(context, 'ap.baths'), baths, (v) => setState(() => baths = v))),
         ]),
         const SizedBox(height: 12),
         SwitchListTile(contentPadding: EdgeInsets.zero, value: furnished, activeColor: J.leaf, onChanged: (v) => setState(() => furnished = v),
-            title: Text('Meublé', style: J.ui(15, w: FontWeight.w700))),
-        _label('Équipements'),
+            title: Text(tr(context, 'sc.furnished'), style: J.ui(15, w: FontWeight.w700))),
+        _label(tr(context, 'ap.amenities')),
         Wrap(spacing: 6, runSpacing: 6, children: [
           for (final k in amenityKeys) _chip(AppScope.of(context).amenityLabel(k), amenityIcons[k]!, amen[k]!, () => setState(() => amen[k] = !amen[k]!)),
         ]),
         const SizedBox(height: 16),
-        _label('Description'),
-        _field(desc, 'Décrivez le logement, le quartier, l\'accès…', lines: 4),
+        _label(tr(context, 'ap.desc')),
+        _field(desc, tr(context, 'ap.descPh'), lines: 4),
         const SizedBox(height: 22),
         Text('Contact', style: J.ui(16, w: FontWeight.w800)),
         const SizedBox(height: 4),
-        Text('Les locataires vous joignent par ces numéros depuis l\'annonce (boutons Appeler et WhatsApp).',
+        Text(tr(context, 'ap.contactInfo'),
             style: J.ui(13, c: J.clay500, h: 1.45)),
         const SizedBox(height: 12),
         _label('Téléphone'),
         _field(contactPhone, '70 00 00 00', prefix: '+223', phone: true),
         const SizedBox(height: 12),
-        _label('WhatsApp (facultatif)'),
+        _label(tr(context, 'ap.waOpt')),
         _field(contactWhatsapp, '76 00 00 00', prefix: '+223', phone: true),
         const SizedBox(height: 8),
-        Text('Laissé vide : pas de bouton WhatsApp. Ces numéros sont aussi ceux de votre profil ; les modifier ici le met à jour.',
+        Text(tr(context, 'ap.waInfo'),
             style: J.ui(12, c: J.clay500, h: 1.45)),
       ]);
 
@@ -532,52 +535,52 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
     final loyer = int.tryParse(price.text.replaceAll(' ', '')) ?? 0;
     final mois = (int.tryParse(deposit.text) ?? 0) + (int.tryParse(advance.text) ?? 0);
     return ListView(key: const ValueKey(2), padding: const EdgeInsets.fromLTRB(20, 18, 20, 20), children: [
-      Text('Contrat de location', style: J.ui(24, w: FontWeight.w800)),
+      Text(tr(context, 'ap.contract'), style: J.ui(24, w: FontWeight.w800)),
       const SizedBox(height: 4),
-      Text('Obligatoire pour publier. Le locataire voit ces conditions avant de vous écrire.',
+      Text(tr(context, 'ap.contractSub'),
           style: J.ui(14, c: J.clay500, w: FontWeight.w400, h: 1.5)),
-      _article('2', 'Durée du bail'),
+      _article('2', tr(context, 'ap.a2')),
       Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Durée minimale'), _field(minDuration, '12 mois')])),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.minDur')), _field(minDuration, '12 mois')])),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Préavis'), _field(notice, '1 mois')])),
       ]),
-      _article('3', 'Loyer, caution et avance'),
+      _article('3', tr(context, 'ap.a3')),
       Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Payé le'), _field(payDay, '5', number: true, onChanged: true)])),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.payDay')), _field(payDay, '5', number: true, onChanged: true)])),
         const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Caution'), _field(deposit, '2', suffix: 'mois', number: true, onChanged: true)])),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.deposit')), _field(deposit, '2', suffix: 'mois', number: true, onChanged: true)])),
         const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label('Avance'), _field(advance, '3', suffix: 'mois', number: true, onChanged: true)])),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_label(tr(context, 'ap.advance')), _field(advance, '3', suffix: 'mois', number: true, onChanged: true)])),
       ]),
       if (loyer > 0 && mois > 0) ...[
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(color: const Color(0xFFFBF6EA), borderRadius: BorderRadius.circular(14)),
-          child: Text('À verser à l\'entrée : ${_fcfa(loyer * mois)} FCFA ($mois mois de loyer)', style: J.ui(13, w: FontWeight.w700)),
+          decoration: BoxDecoration(color: J.x(0xFFFBF6EA), borderRadius: BorderRadius.circular(14)),
+          child: Text(tr(context, 'ap.toPay').replaceAll('{v}', _fcfa(loyer * mois)).replaceAll('{m}', '$mois'), style: J.ui(13, w: FontWeight.w700)),
         ),
       ],
       const SizedBox(height: 12),
-      _label('Charges comprises dans le loyer'),
+      _label(tr(context, 'ap.charges')),
       Wrap(spacing: 6, runSpacing: 6, children: [
         for (final e in chargeLabels.entries)
-          _chip(e.value, charges.contains(e.key) ? Icons.check_rounded : Icons.add_rounded, charges.contains(e.key),
+          _chip(tr(context, e.value), charges.contains(e.key) ? Icons.check_rounded : Icons.add_rounded, charges.contains(e.key),
               () => setState(() => charges.contains(e.key) ? charges.remove(e.key) : charges.add(e.key))),
       ]),
       const SizedBox(height: 6),
-      Text('Ce qui n\'est pas coché reste à la charge du locataire.', style: J.ui(12, c: J.clay500)),
-      _article('4', 'Obligations des parties'),
+      Text(tr(context, 'ap.chargesInfo'), style: J.ui(12, c: J.clay500)),
+      _article('4', tr(context, 'ap.a4')),
       _field(obligations, 'Ex. le bailleur garantit l\'accès à l\'eau et à l\'électricité et prend en charge les grosses réparations. Le locataire entretient le logement et paie à la date convenue.', lines: 5),
       const SizedBox(height: 12),
-      _label('Règles de la maison (une par ligne, facultatif)'),
+      _label(tr(context, 'ap.rules')),
       _field(rules, 'Pas d\'animaux\nPas de musique après 22 h', lines: 3),
       _article('5', 'Résiliation'),
       _field(termination, 'Ex. en cas de deux mois d\'impayés, de dégradation ou de sous-location non autorisée, le bail peut être résilié après mise en demeure de 15 jours.', lines: 4),
-      _article('6', 'Clauses particulières (facultatif)'),
-      _field(extra, 'Tout ce que les articles précédents ne couvrent pas.', lines: 3),
+      _article('6', tr(context, 'ap.a6')),
+      _field(extra, tr(context, 'ap.a6Ph'), lines: 3),
       const SizedBox(height: 14),
-      Text('Modèle fourni par JIGISO, non rédigé par un juriste. Pour un bail long ou un montant important, faites-le relire par un professionnel du droit malien.',
+      Text(tr(context, 'ap.legal'),
           style: J.ui(12, c: J.clay500, h: 1.45)),
     ]);
   }
@@ -593,7 +596,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
 
   Widget _field(TextEditingController c, String hint, {String? suffix, String? prefix, bool number = false, bool phone = false, int lines = 1, bool onChanged = false}) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(color: const Color(0xFFF8F6F1), borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
+        decoration: BoxDecoration(color: J.x(0xFFF8F6F1), borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
         child: Row(children: [
           if (prefix != null) ...[Text(prefix, style: J.ui(15, w: FontWeight.w700)), const SizedBox(width: 10)],
           Expanded(child: TextField(controller: c, maxLines: lines, onChanged: onChanged ? (_) => setState(() {}) : null,
@@ -610,8 +613,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           height: 38, padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(color: on ? J.leaf : Colors.white, borderRadius: BorderRadius.circular(999), border: Border.all(color: on ? J.leaf : J.soft, width: 1.5)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(i, size: 17, color: on ? Colors.white : J.ink), const SizedBox(width: 5), Text(l, style: J.ui(13, c: on ? Colors.white : J.ink, w: FontWeight.w600))]),
+          decoration: BoxDecoration(color: on ? J.leaf : J.surface, borderRadius: BorderRadius.circular(999), border: Border.all(color: on ? J.leaf : J.soft, width: 1.5)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(i, size: 17, color: on ? J.onInk : J.ink), const SizedBox(width: 5), Text(l, style: J.ui(13, c: on ? J.onInk : J.ink, w: FontWeight.w600))]),
         ),
       );
 
@@ -621,7 +624,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen> {
           height: 52, padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
           child: Row(children: [
-            _sq(Icons.remove_rounded, const Color(0xFFF5F1E8), J.ink, () => on(v > 0 ? v - 1 : 0)),
+            _sq(Icons.remove_rounded, J.x(0xFFF5F1E8), J.ink, () => on(v > 0 ? v - 1 : 0)),
             Expanded(child: Center(child: AnimatedSwitcher(duration: const Duration(milliseconds: 150), child: Text('$v', key: ValueKey(v), style: J.ui(17, w: FontWeight.w800))))),
             _sq(Icons.add_rounded, J.leaf, Colors.white, () => on(v + 1)),
           ]),
@@ -659,7 +662,7 @@ class ReorderableWrapGrid extends StatelessWidget {
               )),
               Positioned(top: 6, right: 6, child: GestureDetector(
                 onTap: () => onRemove(i),
-                child: Container(width: 28, height: 28, decoration: BoxDecoration(color: J.ink.withOpacity(.6), shape: BoxShape.circle), child: const Icon(Icons.close_rounded, size: 16, color: Colors.white)),
+                child: Container(width: 28, height: 28, decoration: BoxDecoration(color: J.night.withOpacity(.6), shape: BoxShape.circle), child: const Icon(Icons.close_rounded, size: 16, color: Colors.white)),
               )),
             ])),
           );
@@ -678,10 +681,10 @@ class ReorderableWrapGrid extends StatelessWidget {
               onTap: onAdd,
               child: Container(
                 width: big ? w * 2 + 10 : w, height: big ? w * 2 + 10 : w,
-                decoration: BoxDecoration(color: const Color(0xFFF4F7F5), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0xFFB9D3C2), width: 2)),
+                decoration: BoxDecoration(color: J.x(0xFFF4F7F5), borderRadius: BorderRadius.circular(18), border: Border.all(color: J.x(0xFFB9D3C2), width: 2)),
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Icon(Icons.add_a_photo_outlined, color: J.leaf, size: big ? 36 : 26),
-                  if (big) ...[const SizedBox(height: 8), Text('Photo principale', style: J.ui(14, w: FontWeight.w700)), Text('Touchez pour ajouter', style: J.ui(12, c: J.clay500))],
+                  if (big) ...[const SizedBox(height: 8), Text(tr(context, 'ap.mainPhoto'), style: J.ui(14, w: FontWeight.w700)), Text(tr(context, 'ap.tapAdd'), style: J.ui(12, c: J.clay500))],
                 ]),
               ),
             );

@@ -9,6 +9,9 @@ import '../widgets/jigiso_logo.dart';
 import '../main.dart';
 import 'auth.dart';
 import 'verification.dart';
+import 'activity.dart';
+import 'alerts.dart';
+import 'availability.dart';
 
 /// Espace du compte — photo, informations, mot de passe, vérification.
 ///
@@ -51,10 +54,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _lisible(Object e) {
     final texte = e.toString();
     if (texte.contains('Socket') || texte.contains('Timeout')) {
-      return 'Serveur injoignable. Vérifiez votre connexion.';
+      return tr(context, 'err.server');
     }
     if (e is ApiException) return e.message;
-    return 'Une erreur est survenue.';
+    return tr(context, 'err.generic');
   }
 
   void _dire(String message, {bool erreur = false}) {
@@ -83,7 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final maj = await Api.updateProfile(photo: File(fichier.path));
       if (!mounted) return;
       s.updateUser(maj);
-      _dire('Photo mise à jour.');
+      _dire(tr(context, 'pf.photoOk'));
     } catch (e) {
       _dire(_lisible(e), erreur: true);
     } finally {
@@ -95,16 +98,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context: context,
         backgroundColor: Colors.transparent,
         builder: (_) => _Feuille(
-          titre: 'Photo de profil',
+          titre: tr(context, 'pf.photo'),
           enfants: [
             _Ligne(
               icone: Icons.photo_camera_outlined,
-              titre: 'Prendre une photo',
+              titre: tr(context, 'pf.camera'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             _Ligne(
               icone: Icons.photo_library_outlined,
-              titre: 'Choisir dans la galerie',
+              titre: tr(context, 'pf.gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -125,9 +128,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _FormulaireSheet(
-        titre: 'Mes informations',
+        titre: tr(context, 'me.infos'),
         champs: [
-          KitField(label: 'Nom complet', hint: 'Votre nom', icon: Icons.person_outline, controller: _nom),
+          KitField(label: tr(context, 'pf.fullName'), hint: tr(context, 'pf.yourName'), icon: Icons.person_outline, controller: _nom),
           const SizedBox(height: 14),
           KitField(
             label: 'Téléphone', hint: '70 00 00 00', icon: Icons.phone_outlined,
@@ -135,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 14),
           KitField(
-            label: 'Numéro WhatsApp', hint: '76 00 00 00', icon: Icons.chat_outlined,
+            label: tr(context, 'pf.wa'), hint: '76 00 00 00', icon: Icons.chat_outlined,
             controller: _whatsapp, keyboard: TextInputType.phone,
           ),
           const SizedBox(height: 8),
@@ -144,8 +147,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
              découvrir en se demandant pourquoi personne ne l'écrit. */
           Text(
             u.role == 'owner'
-                ? 'Ce numéro — et pas celui du compte — apparaît en bouton WhatsApp sur vos annonces. Laissé vide, aucun bouton ne s\'affiche.'
-                : 'Utilisé pour vous joindre sur WhatsApp. Peut différer du téléphone du compte.',
+                ? tr(context, 'pf.waOwner')
+                : tr(context, 'pf.waTenant'),
             style: J.ui(12, c: J.clay500),
           ),
           if (u.phoneVerified) ...[
@@ -153,7 +156,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             /* Dit à l'avance ce que le changement coûte : le serveur remet
                phoneVerified à false, et le découvrir après coup serait vécu
                comme une régression inexpliquée. */
-            Text('Changer de numéro annulera sa vérification.',
+            Text(tr(context, 'pf.phoneWarn'),
                 style: J.ui(12, c: J.clay500)),
           ],
         ],
@@ -172,7 +175,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (maj != null && mounted) {
       s.updateUser(maj);
-      _dire('Profil mis à jour.');
+      _dire(tr(context, 'pf.saved'));
     }
   }
 
@@ -188,21 +191,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _FormulaireSheet(
-        titre: 'Changer le mot de passe',
+        titre: tr(context, 'me.password'),
         champs: [
-          KitField(label: 'Mot de passe actuel', hint: '••••••••', icon: Icons.lock_outline,
+          KitField(label: tr(context, 'pf.curPass'), hint: '••••••••', icon: Icons.lock_outline,
               controller: _actuel, obscure: true),
           const SizedBox(height: 14),
-          KitField(label: 'Nouveau mot de passe', hint: '8 caractères minimum', icon: Icons.lock_reset_outlined,
+          KitField(label: tr(context, 'pf.newPass'), hint: tr(context, 'pf.min8'), icon: Icons.lock_reset_outlined,
               controller: _nouveau, obscure: true),
           const SizedBox(height: 14),
-          KitField(label: 'Confirmer', hint: 'Retapez le nouveau', icon: Icons.lock_reset_outlined,
+          KitField(label: tr(context, 'pf.confirm'), hint: tr(context, 'pf.retype'), icon: Icons.lock_reset_outlined,
               controller: _confirmation, obscure: true),
           const SizedBox(height: 12),
-          Text('Il faut au moins 8 caractères, une minuscule, une majuscule et un chiffre.',
+          Text(tr(context, 'pf.rule'),
               style: J.ui(12, c: J.clay500)),
           const SizedBox(height: 6),
-          Text('Vous serez déconnecté de tous vos appareils, celui-ci compris.',
+          Text(tr(context, 'pf.logoutAll'),
               style: J.ui(12, c: J.goldDeep, w: FontWeight.w600)),
         ],
         libelleAction: 'Changer',
@@ -250,6 +253,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 sous: u.phone.isEmpty ? u.email : u.phone, onTap: _modifierInfos),
             _Ligne(icone: Icons.lock_outline, titre: s.t('me.password'),
                 sous: s.t('me.passwordSub'), onTap: _changerMotDePasse),
+            _Ligne(icone: Icons.notifications_none_rounded, titre: s.t('alerts.t'),
+                sous: s.t('alerts.sub'),
+                onTap: () => Navigator.of(context).push(slideRoute(const AlertsScreen()))),
+            _Ligne(icone: Icons.history_rounded, titre: s.t('act.t'), sous: s.t('act.sub'),
+                onTap: () => Navigator.of(context).push(slideRoute(const ActivityScreen()))),
+            if (u.role == 'owner')
+              _Ligne(icone: Icons.schedule_rounded, titre: s.t('avail.t'), sous: s.t('avail.manage'),
+                  onTap: () => Navigator.of(context).push(slideRoute(const AvailabilityScreen()))),
             if (u.role == 'owner')
               _Ligne(
                 icone: Icons.verified_user_outlined,
@@ -265,31 +276,108 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Text(s.t('me.lang'), style: J.mono(10)),
         const SizedBox(height: 10),
         Row(children: [
-          for (final l in ['fr', 'en']) ...[
+          for (final (l, nom) in const [('fr', 'Français'), ('bm', 'Bamanankan'), ('en', 'English')]) ...[
             Expanded(child: Pressable(
               onTap: () => s.setLang(l),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                height: 50,
+                constraints: const BoxConstraints(minHeight: 52),
                 alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 decoration: BoxDecoration(
                   color: s.lang == l ? J.ink : Colors.transparent,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: s.lang == l ? J.ink : J.line, width: 1.5),
                 ),
-                child: Text(l == 'fr' ? 'Français' : 'English',
-                    style: J.sans(15, c: s.lang == l ? J.cream : J.ink, w: FontWeight.w600)),
+                child: Text(nom, textAlign: TextAlign.center,
+                    style: J.sans(14, c: s.lang == l ? J.cream : J.ink, w: FontWeight.w600)),
               ),
             )),
-            if (l == 'fr') const SizedBox(width: 8),
+            if (l != 'en') const SizedBox(width: 8),
           ],
+        ]),
+        if (s.lang == 'bm') ...[
+          const SizedBox(height: 8),
+          Text(s.t('me.langBeta'), style: J.ui(12, c: J.clay500)),
+        ],
+
+        // Confort : taille du texte et économie de données
+        const SizedBox(height: 26),
+        Text(s.t('me.comfort'), style: J.mono(10)),
+        const SizedBox(height: 10),
+        Text(s.t('me.text'), style: J.ui(15, w: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Row(children: [
+          for (final (v, cle, taille) in const [(1.0, 'me.textN', 14.0), (1.15, 'me.textL', 16.5), (1.3, 'me.textXL', 19.0)]) ...[
+            Expanded(child: Pressable(
+              onTap: () => s.setTextScale(v),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                constraints: const BoxConstraints(minHeight: 64),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: s.textScale == v ? J.ink : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: s.textScale == v ? J.ink : J.line, width: 1.5),
+                ),
+                // Aperçu : la lettre a la taille correspondante
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text('Aa', textScaler: TextScaler.noScaling,
+                      style: J.ui(taille, c: s.textScale == v ? J.cream : J.ink, w: FontWeight.w800)),
+                  Text(s.t(cle), textAlign: TextAlign.center,
+                      style: J.ui(12, c: s.textScale == v ? J.cream : J.clay500, w: FontWeight.w600)),
+                ]),
+              ),
+            )),
+            if (v != 1.3) const SizedBox(width: 8),
+          ],
+        ]),
+        const SizedBox(height: 14),
+        Text(s.t('me.theme'), style: J.ui(15, w: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Row(children: [
+          for (final (v, cle, icone) in const [('auto', 'me.themeAuto', Icons.brightness_auto_rounded),
+              ('clair', 'me.themeLight', Icons.light_mode_outlined), ('sombre', 'me.themeDark', Icons.dark_mode_outlined)]) ...[
+            Expanded(child: Pressable(
+              onTap: () => s.setTheme(v),
+              child: Semantics(button: true, selected: s.theme == v, child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                constraints: const BoxConstraints(minHeight: 64),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: s.theme == v ? J.ink : Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: s.theme == v ? J.ink : J.line, width: 1.5),
+                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icone, size: 22, color: s.theme == v ? J.cream : J.ink),
+                  const SizedBox(height: 4),
+                  Text(s.t(cle), textAlign: TextAlign.center,
+                      style: J.ui(12, c: s.theme == v ? J.cream : J.clay500, w: FontWeight.w600)),
+                ]),
+              )),
+            )),
+            if (v != 'sombre') const SizedBox(width: 8),
+          ],
+        ]),
+        const SizedBox(height: 14),
+        _groupe([
+          SwitchListTile(
+            value: s.lowData, onChanged: s.setLowData, activeThumbColor: J.gold,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            secondary: Icon(Icons.data_saver_on_rounded, color: J.clay600),
+            title: Text(s.t('me.lowData'), style: J.ui(15, w: FontWeight.w600)),
+            subtitle: Text(s.t('me.lowDataSub'), style: J.ui(12, c: J.clay500)),
+          ),
         ]),
 
         const SizedBox(height: 26),
         KitButton(
           label: u == null ? s.t('me.login') : s.t('me.signOut'),
-          bg: u == null ? J.ink : Colors.white,
-          fg: u == null ? Colors.white : J.terracotta,
+          bg: u == null ? J.ink : J.surface,
+          fg: u == null ? J.onInk : J.terracotta,
           onTap: () {
             s.signOut();
             Navigator.of(context).pushAndRemoveUntil(fadeRoute(const WelcomeScreen()), (_) => false);
@@ -327,8 +415,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (u.emailVerified || u.phoneVerified) ...[
                 const SizedBox(height: 8),
                 Wrap(spacing: 6, runSpacing: 6, children: [
-                  if (u.emailVerified) const _Badge(texte: 'Email vérifié'),
-                  if (u.phoneVerified) const _Badge(texte: 'Téléphone vérifié'),
+                  if (u.emailVerified) _Badge(texte: tr(context, 'pf.emailOk')),
+                  if (u.phoneVerified) _Badge(texte: tr(context, 'pf.phoneOk')),
                 ]),
               ],
             ],
@@ -349,14 +437,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               color: J.gold, shape: BoxShape.circle,
               image: photo.isEmpty ? null : DecorationImage(image: NetworkImage(photo), fit: BoxFit.cover),
             ),
-            child: photo.isEmpty ? const Icon(Icons.person_rounded, color: J.ink, size: 36) : null,
+            child: photo.isEmpty ? Icon(Icons.person_rounded, color: J.ink, size: 36) : null,
           ),
           if (_envoiPhoto)
             Container(
               width: 72, height: 72,
               decoration: const BoxDecoration(color: Color(0x9917150F), shape: BoxShape.circle),
               alignment: Alignment.center,
-              child: const SizedBox(width: 22, height: 22,
+              child: SizedBox(width: 22, height: 22,
                   child: CircularProgressIndicator(strokeWidth: 2.5, color: J.cream)),
             ),
           // Pastille appareil photo : sans elle, rien n'indique que l'avatar
@@ -370,7 +458,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: J.ink, shape: BoxShape.circle,
                   border: Border.all(color: J.card, width: 2),
                 ),
-                child: const Icon(Icons.photo_camera_rounded, size: 13, color: J.cream),
+                child: Icon(Icons.photo_camera_rounded, size: 13, color: J.cream),
               ),
             ),
         ]),
@@ -386,7 +474,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         child: Column(children: [
           for (var i = 0; i < lignes.length; i++) ...[
-            if (i > 0) const Divider(height: 1, thickness: 1, color: J.soft, indent: 56),
+            if (i > 0) Divider(height: 1, thickness: 1, color: J.soft, indent: 56),
             lignes[i],
           ],
         ]),
@@ -415,9 +503,9 @@ class _Badge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: const Color(0xFFE8F0E9), borderRadius: BorderRadius.circular(999)),
+        decoration: BoxDecoration(color: J.x(0xFFE8F0E9), borderRadius: BorderRadius.circular(999)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.check_circle, size: 11, color: J.leaf),
+          Icon(Icons.check_circle, size: 11, color: J.leaf),
           const SizedBox(width: 4),
           Text(texte, style: J.ui(11, c: J.leaf, w: FontWeight.w600)),
         ]),
@@ -449,7 +537,7 @@ class _Ligne extends StatelessWidget {
                     maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ])),
-            const Icon(Icons.chevron_right_rounded, color: J.clay300),
+            Icon(Icons.chevron_right_rounded, color: J.clay300),
           ]),
         ),
       );
@@ -462,8 +550,8 @@ class _Feuille extends StatelessWidget {
   const _Feuille({required this.titre, required this.enfants});
   @override
   Widget build(BuildContext context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: J.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -520,10 +608,10 @@ class _FormulaireSheetState<T> extends State<_FormulaireSheet<T>> {
       if (!mounted) return;
       setState(() {
         _erreur = texte.contains('Socket') || texte.contains('Timeout')
-            ? 'Serveur injoignable. Vérifiez votre connexion.'
+            ? tr(context, 'err.server')
             : e is ApiException
                 ? e.message
-                : 'Une erreur est survenue.';
+                : tr(context, 'err.generic');
         _enCours = false;
       });
     }
@@ -535,8 +623,8 @@ class _FormulaireSheetState<T> extends State<_FormulaireSheet<T>> {
         // « Enregistrer » se retrouve caché dès le premier champ touché.
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
         child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: J.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
@@ -556,11 +644,11 @@ class _FormulaireSheetState<T> extends State<_FormulaireSheet<T>> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBEDE8),
+                        color: J.x(0xFFFBEDE8),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(children: [
-                        const Icon(Icons.error_outline, size: 17, color: J.terracotta),
+                        Icon(Icons.error_outline, size: 17, color: J.terracotta),
                         const SizedBox(width: 8),
                         Expanded(child: Text(_erreur!, style: J.ui(13, c: J.terracotta, w: FontWeight.w600))),
                       ]),

@@ -5,6 +5,7 @@ const Report = require('../models/Report');
 const Favorite = require('../models/Favorite');
 const { deleteImage } = require('../config/cloudinary');
 const risk = require('../services/risk');
+const alertMatcher = require('../services/alertMatcher');
 const recommender = require('../services/recommender');
 const MlModel = require('../models/MlModel');
 
@@ -130,13 +131,19 @@ exports.deleteUser = async (req, res) => {
 // ─── GET /api/admin/properties ────────────────────────────
 exports.getAllProperties = async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status, risque, page = 1, limit = 20 } = req.query;
     const filter = status ? { status } : {};
+    /* File « à examiner » : risque moyen ou élevé, le plus risqué d'abord.
+       Les annonces louées ou refusées n'y figurent pas, sauf filtre explicite. */
+    if (risque) {
+      filter['risk.level'] = risque === 'eleve' ? 'eleve' : { $in: ['moyen', 'eleve'] };
+      if (!status) filter.status = { $in: ['pending', 'approved'] };
+    }
     const total = await Property.countDocuments(filter);
     const properties = await Property.find(filter)
       .select('+risk')
       .populate('owner', 'name email phone')
-      .sort({ createdAt: -1 })
+      .sort(risque ? { 'risk.score': -1, createdAt: -1 } : { createdAt: -1 })
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit));
 
@@ -211,17 +218,36 @@ const emailService = require('../services/email.service');
 // Override approveProperty avec email
 exports.approvePropertyWithEmail = async (req, res) => {
   try {
-    const property = await require('../models/Property')
-      .findByIdAndUpdate(req.params.id, { status: 'approved', adminNote: '' }, { new: true })
-      .populate('owner', 'name email');
-    if (!property) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    const Property = require('../models/Property');
+    const avant = await Property.findById(req.params.id).select('publishedAt').lean();
+    if (!avant) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    const premiere = !avant.publishedAt;
 
-    emailService.sendPropertyApproved({
-      ownerEmail: property.owner.email,
-      ownerName: property.owner.name,
-      propertyTitle: property.title,
-      propertyId: property._id,
-    }).catch(err => console.error('Email approbation:', err.message));
+    const property = await Property.findByIdAndUpdate(
+      req.params.id,
+      { status: 'approved', adminNote: '', moderatedAt: new Date(), ...(premiere ? { publishedAt: new Date() } : {}) },
+      { new: true },
+    ).populate('owner', 'name email');
+
+    if (property.owner) {
+      emailService.sendPropertyApproved({
+        ownerEmail: property.owner.email,
+        ownerName: property.owner.name,
+        propertyTitle: property.title,
+        propertyId: property._id,
+      }).catch(err => console.error('Email approbation:', err.message));
+    }
+
+    // Première publication : on prévient les alertes qui correspondent
+    if (premiere) alertMatcher.notifierNouvelleAnnonce(property);
+
+    // Loyer validé : un changement brutal ensuite sera signalé à la modération
+    await Property.updateOne({ _id: property._id }, { approvedPrice: property.price });
+    // Lieux à proximité recherchés dès la validation : la fiche les affiche d'emblée
+    if (property.location?.lat) {
+      require('../services/alentours').obtenir(property.locationApprox?.lat ? property.locationApprox
+        : require('../services/privacy').approcher(property.location, property._id)).catch(() => {});
+    }
 
     // Chaque décision devient un exemple pour le modèle de risque
     risk.apprendreDecision(property._id, false);
@@ -405,16 +431,22 @@ exports.getPropertyRisk = async (req, res) => {
 };
 
 /**
- * POST /api/admin/risk/refresh — calcule le score des annonces qui n'en ont
- * pas encore (publiées avant l'arrivée du score). Renvoie aussi l'état du modèle.
+ * POST /api/admin/risk/refresh — recalcule le score des annonces en attente
+ * ou publiées (empreintes de photos manquantes comprises), pour tenir compte
+ * des annonces arrivées depuis : une photo publiée hier peut révéler
+ * aujourd'hui une copie. Renvoie aussi l'état du modèle et la file à examiner.
  */
 exports.refreshRisks = async (req, res) => {
   try {
-    const sans = await Property.find({ risk: { $exists: false } }).select('_id').limit(500).lean();
-    for (const p of sans) await risk.mettreAJour(p._id);
-    const modele = await MlModel.findOne({ name: 'risk' }).lean();
+    const annonces = await Property.find({ status: { $in: ['pending', 'approved'] } })
+      .select('_id').sort({ createdAt: -1 }).limit(1000).lean();
+    for (const p of annonces) await risk.mettreAJour(p._id);
+    const [modele, aExaminer] = await Promise.all([
+      MlModel.findOne({ name: 'risk' }).lean(),
+      Property.countDocuments({ status: { $in: ['pending', 'approved'] }, 'risk.level': { $in: ['moyen', 'eleve'] } }),
+    ]);
     res.json({
-      success: true, updated: sans.length,
+      success: true, updated: annonces.length, aExaminer,
       model: modele ? { samples: modele.samples, accuracy: modele.accuracy, trainedAt: modele.trainedAt } : null,
     });
   } catch (error) {

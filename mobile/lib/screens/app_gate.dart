@@ -22,9 +22,9 @@ class AppGate extends StatelessWidget {
             padding: const EdgeInsets.all(32),
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Container(width: 72, height: 72, decoration: const BoxDecoration(color: J.gold, shape: BoxShape.circle),
-                  child: const Icon(Icons.construction_rounded, color: J.ink, size: 34)),
+                  child: const Icon(Icons.construction_rounded, color: J.night, size: 34)),
               const SizedBox(height: 20),
-              Text('Maintenance en cours', style: J.ui(24, c: J.cream, w: FontWeight.w800)),
+              Text(tr(context, 'gate.maint'), style: J.ui(24, c: J.cream, w: FontWeight.w800)),
               const SizedBox(height: 10),
               Text(c.maintenanceMessage, textAlign: TextAlign.center, style: J.ui(15, c: J.line, w: FontWeight.w400, h: 1.5)),
               const SizedBox(height: 28),
@@ -38,11 +38,11 @@ class AppGate extends StatelessWidget {
           child: Align(alignment: Alignment.bottomCenter, child: Container(
             width: double.infinity,
             padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+            decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('Mise à jour requise', style: J.ui(22, w: FontWeight.w800)),
+              Text(tr(context, 'gate.update'), style: J.ui(22, w: FontWeight.w800)),
               const SizedBox(height: 8),
-              Text('Installez la version ${c.currentVersion} pour continuer à utiliser Jigiso.', style: J.ui(14, c: J.clay500, w: FontWeight.w400, h: 1.5)),
+              Text(tr(context, 'gate.updateSub').replaceAll('{v}', c.currentVersion), style: J.ui(14, c: J.clay500, w: FontWeight.w400, h: 1.5)),
               const SizedBox(height: 20),
               Pressable(
                 onTap: () {
@@ -50,7 +50,7 @@ class AppGate extends StatelessWidget {
                   if (url.isNotEmpty) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                 },
                 child: Container(height: 56, alignment: Alignment.center, decoration: BoxDecoration(color: J.ink, borderRadius: BorderRadius.circular(18)),
-                    child: Text('Mettre à jour', style: J.ui(16, c: Colors.white, w: FontWeight.w700))),
+                    child: Text(tr(context, 'gate.updateBtn'), style: J.ui(16, c: J.onInk, w: FontWeight.w700))),
               ),
             ]),
           )),

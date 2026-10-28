@@ -5,21 +5,53 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../data/mali_locations.dart';
 import '../theme.dart';
+import '../state/app_state.dart';
 
-/// Récupère la position GPS (demande la permission si besoin)
+/// Le Mali tient dans ce cadre (mêmes bornes que le serveur, qui refuse
+/// toute position d'annonce en dehors).
+bool dansLeMali(double lat, double lng) => lat >= 10 && lat <= 25.5 && lng >= -12.5 && lng <= 4.5;
+
+/// Récupère la position GPS (demande la permission si besoin).
+///
+/// Précision élevée, 15 s au plus, puis repli sur la dernière position
+/// connue. Une position hors du Mali est refusée avec une explication : elle
+/// ne trouverait aucun logement et donnerait des distances de milliers de km
+/// (cas typique : un émulateur Android, placé par défaut en Californie).
 Future<Place?> currentPlace(BuildContext context) async {
   final m = ScaffoldMessenger.of(context);
+  final s = AppScope.of(context);
+  void dire(String cle, {SnackBarAction? action}) =>
+      m.showSnackBar(SnackBar(content: Text(s.t(cle)), action: action, duration: const Duration(seconds: 6)));
+
   if (!await Geolocator.isLocationServiceEnabled()) {
-    m.showSnackBar(const SnackBar(content: Text('Activez la localisation du téléphone')));
+    dire('gps.off', action: SnackBarAction(label: s.t('gps.settings'), onPressed: Geolocator.openLocationSettings));
     return null;
   }
   var p = await Geolocator.checkPermission();
   if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
-  if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-    m.showSnackBar(const SnackBar(content: Text('Permission de localisation refusée')));
+  if (p == LocationPermission.deniedForever) {
+    dire('gps.denied', action: SnackBarAction(label: s.t('gps.settings'), onPressed: Geolocator.openAppSettings));
     return null;
   }
-  final pos = await Geolocator.getCurrentPosition();
+  if (p == LocationPermission.denied) { dire('gps.denied'); return null; }
+
+  Position? pos;
+  try {
+    pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
+    );
+  } catch (_) {
+    pos = await Geolocator.getLastKnownPosition();   // pas de signal GPS (intérieur…) : dernière position connue
+  }
+  if (pos == null) { dire('gps.timeout'); return null; }
+
+  if (!dansLeMali(pos.latitude, pos.longitude)) {
+    m.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text('${s.t('gps.outside')} (${pos.latitude.toStringAsFixed(2)}, ${pos.longitude.toStringAsFixed(2)})'),
+    ));
+    return null;
+  }
   return Place.gps(pos.latitude, pos.longitude);
 }
 
@@ -56,7 +88,7 @@ class _LocationSheetState extends State<_LocationSheet> {
     final filter = q.toLowerCase();
     return Container(
       height: MediaQuery.of(context).size.height * .88,
-      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -64,8 +96,8 @@ class _LocationSheetState extends State<_LocationSheet> {
             Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: J.line, borderRadius: BorderRadius.circular(3)))),
             const SizedBox(height: 14),
             Row(children: [
-              Expanded(child: Text('Où cherchez-vous ?', style: J.ui(22, w: FontWeight.w800))),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: J.clay500)),
+              Expanded(child: Text(tr(context, 'lp.where'), style: J.ui(22, w: FontWeight.w800))),
+              IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close_rounded, color: J.clay500)),
             ]),
             const SizedBox(height: 10),
             if (widget.allowGps) ...[
@@ -85,8 +117,8 @@ class _LocationSheetState extends State<_LocationSheet> {
                     locating ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: a)) : Icon(Icons.my_location_rounded, color: J.ink),
                     const SizedBox(width: 12),
                     Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Utiliser ma position', style: J.ui(15, w: FontWeight.w700)),
-                      Text('Logements autour de vous (GPS)', style: J.ui(12, c: J.clay500)),
+                      Text(tr(context, 'lp.useGps'), style: J.ui(15, w: FontWeight.w700)),
+                      Text(tr(context, 'lp.useGpsSub'), style: J.ui(12, c: J.clay500)),
                     ])),
                     const Icon(Icons.chevron_right_rounded),
                   ]),
@@ -97,9 +129,9 @@ class _LocationSheetState extends State<_LocationSheet> {
             Container(
               height: 52,
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(color: const Color(0xFFF8F6F1), borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
+              decoration: BoxDecoration(color: J.x(0xFFF8F6F1), borderRadius: BorderRadius.circular(16), border: Border.all(color: J.soft, width: 1.5)),
               child: Row(children: [
-                const Icon(Icons.search_rounded, color: J.clay300),
+                Icon(Icons.search_rounded, color: J.clay300),
                 const SizedBox(width: 10),
                 Expanded(child: TextField(onChanged: (v) => setState(() => q = v), style: J.ui(15),
                     decoration: InputDecoration(border: InputBorder.none, hintText: 'Commune, quartier, région…', hintStyle: J.ui(15, c: J.clay300)))),
@@ -108,7 +140,7 @@ class _LocationSheetState extends State<_LocationSheet> {
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: const Color(0xFFF5F1E8), borderRadius: BorderRadius.circular(14)),
+              decoration: BoxDecoration(color: J.x(0xFFF5F1E8), borderRadius: BorderRadius.circular(14)),
               child: Row(children: [
                 for (final t in [(false, 'Bamako'), (true, 'Régions')])
                   Expanded(child: GestureDetector(
@@ -116,7 +148,7 @@ class _LocationSheetState extends State<_LocationSheet> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       height: 40, alignment: Alignment.center,
-                      decoration: BoxDecoration(color: regions == t.$1 ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(11)),
+                      decoration: BoxDecoration(color: regions == t.$1 ? J.surface : Colors.transparent, borderRadius: BorderRadius.circular(11)),
                       child: Text(t.$2, style: J.ui(14, c: regions == t.$1 ? J.ink : J.clay500, w: FontWeight.w700)),
                     ),
                   )),
@@ -130,14 +162,14 @@ class _LocationSheetState extends State<_LocationSheet> {
                   for (final r in maliRegions.entries.where((e) => filter.isEmpty || e.key.toLowerCase().contains(filter)))
                     _row(
                       icon: cur?.kind == 'region' && cur?.region == r.key ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-                      title: 'Région de ${r.key}', sub: 'Chef-lieu : ${r.value}',
+                      title: tr(context, 'pl.region').replaceAll('{r}', r.key), sub: tr(context, 'lp.capital').replaceAll('{c}', r.value),
                       on: cur?.kind == 'region' && cur?.region == r.key,
                       onTap: () => _done(Place.region(r.key)),
                       carte: '${r.key}, Mali',
                     ),
                 ]
               : [
-                  if (filter.isEmpty) _row(icon: Icons.location_city_rounded, title: 'Tout Bamako', sub: 'District', on: cur?.kind == 'bamako', onTap: () => _done(const Place.bamako()), carte: 'Bamako, Mali'),
+                  if (filter.isEmpty) _row(icon: Icons.location_city_rounded, title: tr(context, 'pl.bamako'), sub: tr(context, 'lp.district'), on: cur?.kind == 'bamako', onTap: () => _done(const Place.bamako()), carte: 'Bamako, Mali'),
                   for (final c in bamakoCommunes.entries)
                     if (filter.isEmpty || c.value.any((x) => x.toLowerCase().contains(filter)) || 'commune ${c.key}'.toLowerCase().contains(filter))
                       _commune(c.key, c.value.where((x) => filter.isEmpty || x.toLowerCase().contains(filter)).toList(), cur, forceOpen: filter.isNotEmpty),
@@ -170,10 +202,10 @@ class _LocationSheetState extends State<_LocationSheet> {
       final uri = Uri.parse(
           'https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lng}');
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        if (mounted) messager.showSnackBar(const SnackBar(content: Text('Aucune application de cartes sur cet appareil.')));
+        if (mounted) messager.showSnackBar(SnackBar(content: Text(tr(context, 'lp.noMaps'))));
       }
     } catch (e) {
-      if (mounted) messager.showSnackBar(SnackBar(content: Text('Carte indisponible : $e')));
+      if (mounted) messager.showSnackBar(SnackBar(content: Text('${tr(context, 'lp.mapFail')} $e')));
     } finally {
       if (mounted) setState(() => _carteEnCours = null);
     }
@@ -189,7 +221,7 @@ class _LocationSheetState extends State<_LocationSheet> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(color: on ? widget.accent.withOpacity(.08) : Colors.white, borderRadius: BorderRadius.circular(16),
+            decoration: BoxDecoration(color: on ? widget.accent.withOpacity(.08) : J.surface, borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: on ? widget.accent : J.soft, width: 1.5)),
             child: Row(children: [
               Icon(icon, size: 22, color: on ? widget.accent : J.clay300),
@@ -205,7 +237,7 @@ class _LocationSheetState extends State<_LocationSheet> {
                     child: _carteEnCours == carte
                         ? const SizedBox(width: 18, height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: J.gold))
-                        : const Icon(Icons.map_outlined, size: 20, color: J.clay500),
+                        : Icon(Icons.map_outlined, size: 20, color: J.clay500),
                   ),
                 ),
               ],
@@ -220,7 +252,7 @@ class _LocationSheetState extends State<_LocationSheet> {
     final carteCommune = 'Commune $num, Bamako, Mali';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: inC ? widget.accent : J.soft, width: 1.5)),
+      decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: inC ? widget.accent : J.soft, width: 1.5)),
       child: Column(children: [
         InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -228,11 +260,11 @@ class _LocationSheetState extends State<_LocationSheet> {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(children: [
-              Container(width: 34, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: const Color(0xFFF5F1E8), borderRadius: BorderRadius.circular(10)),
+              Container(width: 34, height: 34, alignment: Alignment.center, decoration: BoxDecoration(color: J.x(0xFFF5F1E8), borderRadius: BorderRadius.circular(10)),
                   child: Text(num, style: J.ui(13, c: J.goldDeep, w: FontWeight.w800))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Commune $num', style: J.ui(15, w: FontWeight.w700)),
+                Text(tr(context, 'lp.commune').replaceAll('{n}', '$num'), style: J.ui(15, w: FontWeight.w700)),
                 Text('${bamakoCommunes[num]!.length} quartiers', style: J.ui(12, c: J.clay300)),
               ])),
               Pressable(
@@ -242,10 +274,10 @@ class _LocationSheetState extends State<_LocationSheet> {
                   child: _carteEnCours == carteCommune
                       ? const SizedBox(width: 18, height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2, color: J.gold))
-                      : const Icon(Icons.map_outlined, size: 20, color: J.clay500),
+                      : Icon(Icons.map_outlined, size: 20, color: J.clay500),
                 ),
               ),
-              AnimatedRotation(turns: isOpen ? .5 : 0, duration: const Duration(milliseconds: 200), child: const Icon(Icons.expand_more_rounded, color: J.clay500)),
+              AnimatedRotation(turns: isOpen ? .5 : 0, duration: const Duration(milliseconds: 200), child: Icon(Icons.expand_more_rounded, color: J.clay500)),
             ]),
           ),
         ),
@@ -262,13 +294,13 @@ class _LocationSheetState extends State<_LocationSheet> {
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Row(children: [
-                        const Icon(Icons.map_outlined, size: 13, color: J.clay300),
+                        Icon(Icons.map_outlined, size: 13, color: J.clay300),
                         const SizedBox(width: 5),
-                        Expanded(child: Text('Appui long sur un quartier pour le situer sur la carte', style: J.ui(11, c: J.clay300))),
+                        Expanded(child: Text(tr(context, 'lp.longPress'), style: J.ui(11, c: J.clay300))),
                       ]),
                     ),
                     Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 6, runSpacing: 6, children: [
-                      _chip('Toute la commune', inC && cur?.kind == 'commune', () => _done(Place.commune(num)), strong: true, carte: carteCommune),
+                      _chip(tr(context, 'lp.wholeCommune'), inC && cur?.kind == 'commune', () => _done(Place.commune(num)), strong: true, carte: carteCommune),
                       for (final x in qs) _chip(x, inC && cur?.quartier == x, () => _done(Place.quartier(num, x)), carte: '$x, Bamako, Mali'),
                     ])),
                   ]),
@@ -295,13 +327,13 @@ class _LocationSheetState extends State<_LocationSheet> {
         child: Container(
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(color: on ? J.ink : (strong ? widget.accent.withOpacity(.15) : const Color(0xFFF5F1E8)), borderRadius: BorderRadius.circular(999)),
+          decoration: BoxDecoration(color: on ? J.ink : (strong ? widget.accent.withOpacity(.15) : J.x(0xFFF5F1E8)), borderRadius: BorderRadius.circular(999)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(l, style: J.ui(12, c: on ? Colors.white : J.ink, w: strong ? FontWeight.w700 : FontWeight.w600)),
+            Text(l, style: J.ui(12, c: on ? J.onInk : J.ink, w: strong ? FontWeight.w700 : FontWeight.w600)),
             if (carte != null && _carteEnCours == carte) ...[
               const SizedBox(width: 6),
               SizedBox(width: 12, height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 1.6, color: on ? Colors.white : J.goldDeep)),
+                  child: CircularProgressIndicator(strokeWidth: 1.6, color: on ? J.onInk : J.goldDeep)),
             ],
           ]),
         ),

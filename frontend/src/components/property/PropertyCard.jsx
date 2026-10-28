@@ -18,7 +18,8 @@ const TYPE_TINT = {
   terrain:     '#4A4636',
 };
 
-export default function PropertyCard({ property, isFavorited = false, onFavoriteChange }) {
+/** `distance` : texte facultatif (« ≈ 2,4 km de vous ») affiché sous le quartier. */
+export default function PropertyCard({ property, isFavorited = false, onFavoriteChange, distance }) {
   const { isAuthenticated } = useAuth();
   const t = useT();
   const [hovering, setHovering] = useState(false);
@@ -161,6 +162,11 @@ export default function PropertyCard({ property, isFavorited = false, onFavorite
         <p className="text-clay-500 text-[13px] mt-1.5">
           {property.neighborhood} · {property.city}
         </p>
+        {distance && (
+          <p className="flex items-center justify-center gap-1 text-gold-deep text-[12.5px] font-semibold mt-1">
+            <Icon name="marker" size={11} /> {distance}
+          </p>
+        )}
 
         {/* Caractéristiques */}
         {/* On assemble la liste avant d'afficher : un séparateur ne doit jamais

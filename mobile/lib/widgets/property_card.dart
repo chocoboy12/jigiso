@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../data/geo.dart';
+import 'share_badges.dart' show BadgeMini;
 
 const typeIcons = {
   'maison': Icons.home_outlined, 'appartement': Icons.apartment_rounded, 'studio': Icons.bed_outlined,
@@ -20,9 +22,20 @@ class PropertyPhoto extends StatelessWidget {
     final tint = J.typeTint[p.type] ?? J.clay600;
     final label = p.photoLabels.isNotEmpty ? 'photo · ${p.photoLabels[index % p.photoLabels.length]}' : null;
     if (p.images.isEmpty) return Hatch(color: tint, label: label);
-    return Image.network(p.images[index % p.images.length], fit: BoxFit.cover,
-        loadingBuilder: (c, child, prog) => prog == null ? child : Hatch(color: tint),
-        errorBuilder: (_, __, ___) => Hatch(color: tint));
+    // Économie de données : aucune photo téléchargée tant qu'on ne l'a pas demandé
+    final s = AppScope.of(context);
+    if (!s.photosVisibles(p.id)) return Hatch(color: tint, label: s.t('photo.hidden'));
+    /* Décodée à la taille affichée, pas à sa taille d'origine (jusqu'à 1 600 px) :
+       une vignette de 158 px ne doit pas occuper la mémoire d'une photo plein
+       écran. C'était une cause des saccades au défilement. */
+    return LayoutBuilder(builder: (context, c) {
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      final largeur = c.maxWidth.isFinite ? (c.maxWidth * dpr).round().clamp(200, 1400) : 1080;
+      return Image.network(p.images[index % p.images.length], fit: BoxFit.cover,
+          cacheWidth: largeur, gaplessPlayback: true,
+          loadingBuilder: (c, child, prog) => prog == null ? child : Hatch(color: tint),
+          errorBuilder: (_, __, ___) => Hatch(color: tint));
+    });
   }
 }
 
@@ -95,8 +108,8 @@ class PropertyCard extends StatelessWidget {
             child: Stack(fit: StackFit.expand, children: [
               Hero(tag: 'photo-${p.id}', child: PropertyPhoto(p)),
               Positioned(top: 12, left: 12, child: p.reserved
-                  ? Tag(s.t('reserved'), bg: J.gold, fg: J.ink)
-                  : p.approved ? Tag(s.t('verified'), bg: J.leaf, fg: J.cream) : const SizedBox()),
+                  ? Tag(s.t('reserved'), bg: J.gold, fg: J.night)
+                  : p.approved ? Tag(s.t('verified'), bg: J.leaf, fg: Colors.white) : const SizedBox()),
               Positioned(top: 10, right: 10, child: HeartButton(p.id)),
             ]),
           ),
@@ -215,13 +228,25 @@ class _ListingCardState extends State<ListingCard> {
           // La note ne s'affiche que si le logement a réellement été évalué.
           if (p.rating > 0) ...[
             const SizedBox(width: 8),
-            const Icon(Icons.star_rounded, size: 16, color: J.ink),
+            Icon(Icons.star_rounded, size: 16, color: J.ink),
             const SizedBox(width: 3),
             Text(p.rating.toStringAsFixed(2).replaceAll('.', ','), style: J.ui(14, w: FontWeight.w600)),
           ],
         ]),
         const SizedBox(height: 3),
         Text(p.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: J.ui(14, c: J.clay500)),
+        // Toutes les annonces publiées sont relues ; seul le propriétaire vérifié se distingue
+        if (p.ownerVerified) ...[const SizedBox(height: 2), BadgeMini(s.t('badge.owner'))],
+        // Distance à vol d'oiseau depuis votre position ou le lieu choisi
+        if (s.distanceDe(p) case final d?) ...[
+          const SizedBox(height: 2),
+          Row(children: [
+            Icon(Icons.near_me_outlined, size: 14, color: J.goldDeep),
+            const SizedBox(width: 4),
+            Flexible(child: Text('${formatDistance(d)} ${s.t('dist.from')} ${s.pointRef!.label}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: J.ui(13, c: J.goldDeep, w: FontWeight.w600))),
+          ]),
+        ],
         const SizedBox(height: 2),
         Text([
           if (p.bedrooms > 0) '${p.bedrooms} ${s.t(p.bedrooms > 1 ? 'beds' : 'bed').toLowerCase()}',
@@ -237,4 +262,28 @@ class _ListingCardState extends State<ListingCard> {
       ]),
     );
   }
+}
+
+/// Petite carte horizontale (récemment vus, nouveautés d'alertes).
+class MiniListing extends StatelessWidget {
+  final Property p;
+  final VoidCallback onTap;
+  const MiniListing(this.p, {super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Pressable(
+        onTap: onTap,
+        child: SizedBox(
+          width: 158,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(borderRadius: BorderRadius.circular(14),
+                child: SizedBox(height: 100, width: 158, child: PropertyPhoto(p))),
+            const SizedBox(height: 7),
+            Text(p.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: J.ui(13.5, w: FontWeight.w700)),
+            Text('${p.neighborhood.isNotEmpty ? '${p.neighborhood}, ' : ''}${p.city}', maxLines: 1,
+                overflow: TextOverflow.ellipsis, style: J.ui(12, c: J.clay500)),
+            Text('${fcfa(p.price)} FCFA', style: J.ui(13, w: FontWeight.w800)),
+          ]),
+        ),
+      );
 }

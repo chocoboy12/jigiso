@@ -1,5 +1,6 @@
 const Alert = require('../models/Alert');
 const Property = require('../models/Property');
+const { correspond } = require('../services/alertMatcher');
 
 exports.getAlerts = async (req, res) => {
   try {
@@ -18,7 +19,7 @@ exports.createAlert = async (req, res) => {
 
     // Compter les logements correspondants maintenant
     const filter = { status: 'approved', isActive: true };
-    if (criteria.city) filter.city = criteria.city;
+    if (criteria.city) filter.city = new RegExp(`^${String(criteria.city).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     if (criteria.type) filter.type = criteria.type;
     if (criteria.bedrooms) filter.bedrooms = { $gte: criteria.bedrooms };
     if (criteria.furnished !== undefined) filter.furnished = criteria.furnished;
@@ -58,5 +59,33 @@ exports.toggleAlert = async (req, res) => {
     alert.isActive = !alert.isActive;
     await alert.save();
     res.json({ success: true, alert });
+  } catch { res.status(500).json({ success: false, message: 'Erreur serveur.' }); }
+};
+
+/**
+ * GET /api/alerts/new — annonces publiées depuis la dernière consultation et
+ * correspondant à au moins une alerte active de la personne.
+ */
+exports.getNewMatches = async (req, res) => {
+  try {
+    const alertes = await Alert.find({ user: req.user._id, isActive: true }).lean();
+    if (!alertes.length) return res.json({ success: true, count: 0, properties: [] });
+
+    const depuis = new Date(Math.min(...alertes.map(a => new Date(a.lastSeenAt || a.createdAt).getTime())));
+    const candidates = await Property.find({
+      status: 'approved', isActive: true, publishedAt: { $gt: depuis }, owner: { $ne: req.user._id },
+    }).select('-contract').sort({ publishedAt: -1 }).limit(100).lean();
+
+    const properties = candidates.filter(p => alertes.some(a =>
+      new Date(p.publishedAt) > new Date(a.lastSeenAt || a.createdAt) && correspond(a.criteria, p))).slice(0, 20);
+    res.json({ success: true, count: properties.length, properties });
+  } catch { res.status(500).json({ success: false, message: 'Erreur serveur.' }); }
+};
+
+/** POST /api/alerts/seen — les nouveautés ont été vues. */
+exports.markSeen = async (req, res) => {
+  try {
+    await Alert.updateMany({ user: req.user._id }, { lastSeenAt: new Date() });
+    res.json({ success: true });
   } catch { res.status(500).json({ success: false, message: 'Erreur serveur.' }); }
 };

@@ -19,7 +19,7 @@ const pinIcon = L.divIcon({
   iconAnchor: [15, 30],
 });
 
-export default function PropertyMap({ location, title, className = '' }) {
+export default function PropertyMap({ location, title, approx = false, className = '' }) {
   const host = useRef(null);
   const map = useRef(null);
 
@@ -27,14 +27,19 @@ export default function PropertyMap({ location, title, className = '' }) {
     if (map.current || !host.current || !location?.lat) return;
 
     const pos = [location.lat, location.lng];
-    map.current = L.map(host.current, { scrollWheelZoom: false }).setView(pos, 16);
+    map.current = L.map(host.current, { scrollWheelZoom: false }).setView(pos, approx ? 15 : 16);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; OpenStreetMap',
     }).addTo(map.current);
-    L.marker(pos, { icon: pinIcon }).addTo(map.current);
+    // Position approchée : un secteur de 400 m, jamais une épingle qui ferait croire à l'adresse
+    if (approx) {
+      L.circle(pos, { radius: 400, color: '#C98A1E', weight: 2, fillColor: '#C98A1E', fillOpacity: 0.16 }).addTo(map.current);
+    } else {
+      L.marker(pos, { icon: pinIcon }).addTo(map.current);
+    }
 
     return () => { map.current?.remove(); map.current = null; };
-  }, [location?.lat, location?.lng]);
+  }, [location?.lat, location?.lng, approx]);
 
   if (!location?.lat) return null;
 
@@ -48,8 +53,14 @@ export default function PropertyMap({ location, title, className = '' }) {
       <a href={directionsUrl} target="_blank" rel="noopener noreferrer"
         className="btn-primary w-full mt-3 flex items-center justify-center gap-2">
         <Icon name="route" size={16} />
-        Itinéraire{title ? ` vers ${title}` : ''}
+        {approx ? 'Itinéraire vers le secteur' : `Itinéraire${title ? ` vers ${title}` : ''}`}
       </a>
+      {approx && (
+        <p className="mt-3 text-[13px] text-clay-500">
+          <strong className="text-gold-deep">Emplacement approximatif.</strong> Le cercle couvre le secteur (± 400 m) ;
+          l’adresse exacte vous est communiquée quand le propriétaire confirme votre visite.
+        </p>
+      )}
     </div>
   );
 }

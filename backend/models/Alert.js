@@ -30,6 +30,8 @@ const alertSchema = new mongoose.Schema({
     default: true,
   },
   lastNotified: Date,
+  /** Dernière fois que la personne a consulté les nouveautés de ses alertes (app) */
+  lastSeenAt: Date,
   matchCount: {
     type: Number,
     default: 0,

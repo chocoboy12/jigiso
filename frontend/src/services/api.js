@@ -70,6 +70,7 @@ export const propertyAPI = {
   getMyProperties: ()      => API.get('/properties/my-properties'),
   getStats:       ()       => API.get('/properties/stats'),
   getSimilar:     (id, limit = 4) => API.get(`/properties/${id}/similar`, { params: { limit } }),
+  getAlentours:   (id) => API.get(`/properties/${id}/alentours`),
   getPriceInsight: (id)    => API.get(`/properties/${id}/price-insight`),
 };
 
@@ -184,6 +185,8 @@ export const adminAPI = {
   rejectProperty:   (id, data)  => API.put(`/admin/properties/${id}/reject`, data),
   getPropertyRisk:  (id)        => API.get(`/admin/properties/${id}/risk`),
   refreshRisks:     ()          => API.post('/admin/risk/refresh'),
+  getLieux:         (statut)    => API.get('/admin/lieux', { params: { statut } }),
+  modererLieu:      (id, action) => API.put(`/admin/lieux/${id}`, { action }),
   getReports:       ()          => API.get('/admin/reports'),
   getVerifications: (params)    => API.get('/admin/verifications', { params }),
   decideVerification: (userId, data) => API.put(`/admin/verifications/${userId}`, data),

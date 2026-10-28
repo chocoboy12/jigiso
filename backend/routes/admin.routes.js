@@ -14,6 +14,9 @@ router.get('/users', adminCtrl.getUsers);
 router.put('/users/:id/block', adminCtrl.toggleBlockUser);
 router.delete('/users/:id', adminCtrl.deleteUser);
 router.get('/properties', adminCtrl.getAllProperties);
+// Lieux signalés par les utilisateurs (« À proximité »), à vérifier
+router.get('/lieux', require('../controllers/lieu.controller').lister);
+router.put('/lieux/:id', require('../controllers/lieu.controller').moderer);
 // Routes avec email
 router.put('/properties/:id/approve', adminCtrl.approvePropertyWithEmail);
 router.get('/properties/:id/risk', adminCtrl.getPropertyRisk);

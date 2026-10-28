@@ -2,8 +2,10 @@ const crypto = require('crypto');
 const fs = require('fs/promises');
 const Property = require('../models/Property');
 const User = require('../models/User');
+const SecurityLog = require('../models/SecurityLog');
 const MlModel = require('../models/MlModel');
 const pricing = require('./pricing');
+const imageHash = require('./imageHash');
 
 /**
  * Score de risque d'une annonce, pour aider l'admin à modérer.
@@ -11,29 +13,42 @@ const pricing = require('./pricing');
  * Deux étages :
  *
  * 1. Règles d'expert (toujours actives). Chaque signal ajoute des points et
- *    une raison lisible : loyer anormalement bas, photo déjà présente dans
- *    l'annonce d'un autre propriétaire, description copiée, coordonnées
- *    glissées dans le texte, compte tout neuf, rafale de publications…
+ *    une raison lisible : loyer anormalement bas, photo identique ou très
+ *    ressemblante à celle d'un autre compte, annonce répétée, même logement
+ *    proposé par un autre compte, description copiée, coordonnées glissées
+ *    dans le texte, compte tout neuf, rythme de publication inhabituel,
+ *    changement de loyer brutal après validation…
  *
  * 2. Modèle appris (régression logistique). Chaque décision de l'admin
  *    (approuvée / refusée) devient un exemple. Dès MIN_EXEMPLES décisions
  *    contenant les deux cas, le modèle est entraîné et son avis est mêlé
  *    aux règles : il apprend quels signaux comptent vraiment sur JIGISO.
  *
- * Le score n'agit jamais seul : il trie et explique, l'admin décide.
+ * Ce sont des indices, pas des preuves : le score trie la file de
+ * modération et explique pourquoi, il n'accuse personne et ne refuse rien
+ * tout seul. Le propriétaire ne le voit jamais ; l'admin décide.
  */
 
 const SIGNAUX = [
   'prix_tres_bas', 'prix_tres_haut', 'photo_reutilisee', 'description_copiee',
   'coordonnees_dans_texte', 'compte_recent', 'compte_suspect', 'rafale',
   'sans_photo', 'description_courte',
+  // ajoutés ensuite (valent 0 dans les anciens exemples d'entraînement)
+  'photo_ressemblante', 'annonce_repetee', 'meme_lieu_autre_compte', 'villes_multiples',
+  'refus_recents', 'modifs_frequentes', 'prix_change_brutal', 'activite_atypique',
 ];
 const POINTS = {
   prix_tres_bas: 35, prix_tres_haut: 10, photo_reutilisee: 40, description_copiee: 30,
   coordonnees_dans_texte: 15, compte_recent: 10, compte_suspect: 20, rafale: 15,
   sans_photo: 10, description_courte: 5,
+  photo_ressemblante: 30, annonce_repetee: 20, meme_lieu_autre_compte: 20, villes_multiples: 15,
+  refus_recents: 15, modifs_frequentes: 10, prix_change_brutal: 20, activite_atypique: 15,
 };
 const MIN_EXEMPLES = 40;
+
+const JOUR = 24 * 3600 * 1000;
+const SEUIL_IDENTIQUE = 4;      // bits différents sur 64 : même photo (recompressée)
+const SEUIL_RESSEMBLANTE = 12;  // même photo recadrée / retouchée ; deux photos sans rapport : ~32
 
 /* ── Empreintes de photos ─────────────────────────────────────── */
 
@@ -41,6 +56,26 @@ const MIN_EXEMPLES = 40;
 exports.empreinteFichier = async (chemin) => {
   try { return crypto.createHash('sha256').update(await fs.readFile(chemin)).digest('hex'); }
   catch { return undefined; }
+};
+
+/**
+ * Calcule les empreintes manquantes des photos d'une annonce (locales ou
+ * Cloudinary) et les enregistre. Renvoie les images complétées.
+ */
+exports.completerEmpreintes = async (annonce) => {
+  const images = annonce.images || [];
+  let change = false;
+  for (const img of images) {
+    if (img.phash) continue;
+    const e = await imageHash.empreintes(img.url);
+    if (e.phash) { Object.assign(img, { hash: img.hash || e.hash, phash: e.phash, phashMiroir: e.phashMiroir }); change = true; }
+  }
+  if (change) {
+    await Property.updateOne({ _id: annonce._id }, { $set: Object.fromEntries(images.flatMap((img, i) => [
+      [`images.${i}.hash`, img.hash], [`images.${i}.phash`, img.phash], [`images.${i}.phashMiroir`, img.phashMiroir],
+    ]).filter(([, v]) => v)) });
+  }
+  return images;
 };
 
 /* ── Texte ────────────────────────────────────────────────────── */
@@ -65,9 +100,48 @@ const COORDONNEES = /(\+?223[\s.-]?)?\b[5-9]\d([\s.-]?\d{2}){3}\b|[\w.+-]+@[\w-]
 
 /* ── Extraction des signaux ───────────────────────────────────── */
 
+const norm = (t) => String(t || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const ensembleMots = (t) => new Set(mots(t).filter(m => m.length > 2));
+
+/** Distance en mètres entre deux points GPS (haversine) */
+const metres = (a, b) => {
+  const r = (d) => d * Math.PI / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+};
+
+/**
+ * Le rythme de publication de ce compte sort-il franchement de celui des
+ * autres propriétaires ? Score z robuste (médiane et écart absolu médian),
+ * peu sensible aux quelques comptes très actifs. Rien n'est conclu tant
+ * qu'il y a moins de 10 propriétaires actifs : la statistique n'aurait pas
+ * de sens.
+ */
+async function rythmeAtypique(ownerId) {
+  const depuis = new Date(Date.now() - 7 * JOUR);
+  const parCompte = await Property.aggregate([
+    { $match: { createdAt: { $gt: new Date(Date.now() - 90 * JOUR) } } },
+    { $group: { _id: '$owner', n: { $sum: { $cond: [{ $gt: ['$createdAt', depuis] }, 1, 0] } } } },
+  ]);
+  if (parCompte.length < 10) return null;
+  const valeurs = parCompte.map(c => c.n).sort((a, b) => a - b);
+  const mediane = valeurs[Math.floor(valeurs.length / 2)];
+  const ecarts = valeurs.map(v => Math.abs(v - mediane)).sort((a, b) => a - b);
+  const mad = ecarts[Math.floor(ecarts.length / 2)] || 1;   // MAD nul : la plupart publient pareil
+  const moi = parCompte.find(c => String(c._id) === String(ownerId))?.n || 0;
+  const z = 0.6745 * (moi - mediane) / mad;
+  return { n: moi, z, mediane };
+}
+
 const extraire = async (annonce) => {
   const s = Object.fromEntries(SIGNAUX.map(k => [k, 0]));
   const raisons = [];
+  const matches = [];
+  const lier = (p, motif) => {
+    if (matches.length < 6 && !matches.some(m => String(m.property) === String(p._id))) {
+      matches.push({ property: p._id, title: p.title, motif });
+    }
+  };
   const ownerId = annonce.owner?._id || annonce.owner;
 
   // Loyer comparé aux annonces semblables (seulement si assez de comparables)
@@ -76,22 +150,84 @@ const extraire = async (annonce) => {
     const ratio = annonce.price / est.estimate;
     if (ratio < 0.5) {
       s.prix_tres_bas = 1;
-      raisons.push(`Loyer à ${Math.round(ratio * 100)} % des annonces comparables (piège classique pour attirer des avances)`);
+      raisons.push(`Loyer à ${Math.round(ratio * 100)} % des annonces comparables : à vérifier (un loyer trop beau sert parfois à obtenir une avance)`);
     } else if (ratio > 2.5) {
       s.prix_tres_haut = 1;
       raisons.push(`Loyer ${ratio.toFixed(1).replace('.', ',')} fois celui des annonces comparables`);
     }
   }
 
-  // Photos déjà présentes dans l'annonce d'un AUTRE propriétaire
-  const empreintes = (annonce.images || []).map(i => i.hash).filter(Boolean);
-  if (empreintes.length) {
-    const doublon = await Property.findOne({
-      _id: { $ne: annonce._id }, owner: { $ne: ownerId }, 'images.hash': { $in: empreintes },
-    }).select('title').lean();
-    if (doublon) {
+  // Loyer modifié fortement depuis la dernière validation
+  if (annonce.approvedPrice > 0 && annonce.price > 0) {
+    const ecart = annonce.price / annonce.approvedPrice - 1;
+    if (Math.abs(ecart) >= 0.4) {
+      s.prix_change_brutal = 1;
+      raisons.push(`Loyer passé de ${annonce.approvedPrice.toLocaleString('fr-FR')} à ${annonce.price.toLocaleString('fr-FR')} FCFA depuis la validation (${ecart > 0 ? '+' : ''}${Math.round(ecart * 100)} %)`);
+    }
+  }
+
+  // Photos : identiques ou très ressemblantes à celles d'un AUTRE compte
+  const images = await exports.completerEmpreintes(annonce);
+  const sha = images.map(i => i.hash).filter(Boolean);
+  const visuelles = images.filter(i => imageHash.informative(i.phash));
+  if (sha.length || visuelles.length) {
+    const autres = await Property.find({ _id: { $ne: annonce._id }, 'images.phash': { $exists: true } })
+      .select('title owner status images.hash images.phash images.phashMiroir').lean();
+    let identique = null, ressemblante = null, memeCompte = new Set();
+    for (const o of autres) {
+      for (const img of o.images || []) {
+        let d = sha.includes(img.hash) ? 0 : 64;
+        for (const v of visuelles) {
+          if (!imageHash.informative(img.phash)) continue;
+          d = Math.min(d, imageHash.hamming(v.phash, img.phash), v.phashMiroir ? imageHash.hamming(v.phashMiroir, img.phash) : 64);
+        }
+        if (d > SEUIL_RESSEMBLANTE) continue;
+        if (String(o.owner) === String(ownerId)) { memeCompte.add(String(o._id)); continue; }
+        if (d <= SEUIL_IDENTIQUE) identique = identique || o; else ressemblante = ressemblante || o;
+      }
+    }
+    if (identique) {
       s.photo_reutilisee = 1;
-      raisons.push(`Photo identique à celle de l'annonce « ${doublon.title} » d'un autre propriétaire`);
+      raisons.push(`Photo identique à une photo de l'annonce « ${identique.title} » d'un autre compte`);
+      lier(identique, 'Même photo');
+    } else if (ressemblante) {
+      s.photo_ressemblante = 1;
+      raisons.push(`Photo très ressemblante (recadrée ou retouchée ?) à une photo de « ${ressemblante.title} », d'un autre compte`);
+      lier(ressemblante, 'Photo ressemblante');
+    }
+    if (memeCompte.size >= 2) {
+      s.annonce_repetee = 1;
+      raisons.push(`Mêmes photos dans ${memeCompte.size} autres annonces de ce compte`);
+      for (const id of memeCompte) { const o = autres.find(a => String(a._id) === id); if (o) lier(o, 'Mêmes photos, même compte'); }
+    }
+  }
+
+  // Annonce répétée par le même compte : même type, même quartier, titre et loyer proches
+  const titre = ensembleMots(annonce.title);
+  const siennes = await Property.find({
+    _id: { $ne: annonce._id }, owner: ownerId, type: annonce.type, status: { $in: ['pending', 'approved'] },
+  }).select('title neighborhood price').lean();
+  const doublons = siennes.filter(o => norm(o.neighborhood) === norm(annonce.neighborhood)
+    && Math.abs(o.price - annonce.price) <= 0.1 * Math.max(o.price, annonce.price, 1)
+    && jaccard(titre, ensembleMots(o.title)) >= 0.6);
+  if (doublons.length) {
+    s.annonce_repetee = 1;
+    raisons.push(`${doublons.length} annonce${doublons.length > 1 ? 's' : ''} quasi identique${doublons.length > 1 ? 's' : ''} déjà publiée${doublons.length > 1 ? 's' : ''} par ce compte (même quartier, titre et loyer)`);
+    doublons.forEach(o => lier(o, 'Doublon du même compte'));
+  }
+
+  // Même logement (même point GPS, même type) proposé par un autre compte
+  if (annonce.location?.lat && annonce.location?.lng) {
+    const { lat, lng } = annonce.location;
+    const voisins = await Property.find({
+      _id: { $ne: annonce._id }, owner: { $ne: ownerId }, type: annonce.type, status: { $in: ['pending', 'approved'] },
+      'location.lat': { $gte: lat - 0.0005, $lte: lat + 0.0005 }, 'location.lng': { $gte: lng - 0.0005, $lte: lng + 0.0005 },
+    }).select('title location').lean();
+    const proche = voisins.find(o => metres(annonce.location, o.location) <= 30);
+    if (proche) {
+      s.meme_lieu_autre_compte = 1;
+      raisons.push(`Même emplacement (moins de 30 m) et même type que « ${proche.title} », proposé par un autre compte — immeuble partagé, ou même logement ?`);
+      lier(proche, 'Même emplacement');
     }
   }
 
@@ -104,6 +240,7 @@ const extraire = async (annonce) => {
     if (copie) {
       s.description_copiee = 1;
       raisons.push(`Description quasi identique à celle de « ${copie.title} »`);
+      lier(copie, 'Description copiée');
     }
   }
 
@@ -112,9 +249,10 @@ const extraire = async (annonce) => {
     raisons.push('Numéro ou e-mail écrit dans le texte (contact hors plateforme)');
   }
 
+  /* ── Comportement du compte ── */
   const proprio = await User.findById(ownerId).select('createdAt fraudScore fraudFlags').lean();
   if (proprio) {
-    if (Date.now() - new Date(proprio.createdAt) < 2 * 24 * 3600 * 1000) {
+    if (Date.now() - new Date(proprio.createdAt) < 2 * JOUR) {
       s.compte_recent = 1;
       raisons.push('Compte créé il y a moins de 2 jours');
     }
@@ -124,12 +262,33 @@ const extraire = async (annonce) => {
     }
   }
 
-  const recentes = await Property.countDocuments({
-    owner: ownerId, createdAt: { $gt: new Date(Date.now() - 24 * 3600 * 1000) },
-  });
+  const [recentes, semaine, refusees, modifs, rythme] = await Promise.all([
+    Property.countDocuments({ owner: ownerId, createdAt: { $gt: new Date(Date.now() - JOUR) } }),
+    Property.find({ owner: ownerId, createdAt: { $gt: new Date(Date.now() - 7 * JOUR) } }).select('city').lean(),
+    Property.countDocuments({ owner: ownerId, _id: { $ne: annonce._id }, status: 'rejected', updatedAt: { $gt: new Date(Date.now() - 30 * JOUR) } }),
+    SecurityLog.countDocuments({ event: 'property_updated', user: ownerId, createdAt: { $gt: new Date(Date.now() - JOUR) } }),
+    rythmeAtypique(ownerId),
+  ]);
   if (recentes >= 4) {
     s.rafale = 1;
     raisons.push(`${recentes} annonces publiées en 24 h par ce compte`);
+  }
+  const villes = new Set(semaine.map(p => norm(p.city)));
+  if (villes.size >= 3) {
+    s.villes_multiples = 1;
+    raisons.push(`Annonces dans ${villes.size} villes différentes en 7 jours`);
+  }
+  if (refusees >= 2) {
+    s.refus_recents = 1;
+    raisons.push(`${refusees} annonces de ce compte refusées ces 30 derniers jours`);
+  }
+  if (modifs >= 5) {
+    s.modifs_frequentes = 1;
+    raisons.push(`${modifs} modifications d'annonces en 24 h`);
+  }
+  if (rythme && rythme.z >= 3.5 && rythme.n >= 3) {
+    s.activite_atypique = 1;
+    raisons.push(`Rythme de publication inhabituel : ${rythme.n} annonces cette semaine, contre ${rythme.mediane} pour un propriétaire typique`);
   }
 
   if (!annonce.images?.length) { s.sans_photo = 1; raisons.push('Aucune photo'); }
@@ -137,7 +296,7 @@ const extraire = async (annonce) => {
     s.description_courte = 1; raisons.push('Description très courte');
   }
 
-  return { signaux: s, raisons };
+  return { signaux: s, raisons, matches };
 };
 
 /* ── Modèle appris ────────────────────────────────────────────── */
@@ -189,7 +348,7 @@ exports.entrainer = async () => {
 
 /** Calcule le score d'une annonce (sans l'enregistrer). */
 exports.evaluer = async (annonce) => {
-  const { signaux, raisons } = await extraire(annonce);
+  const { signaux, raisons, matches } = await extraire(annonce);
   const regles = Math.min(100, SIGNAUX.reduce((t, k) => t + POINTS[k] * signaux[k], 0));
 
   // Avis du modèle appris, s'il existe : moitié règles, moitié modèle
@@ -200,6 +359,7 @@ exports.evaluer = async (annonce) => {
     score,
     level: score >= 60 ? 'eleve' : score >= 30 ? 'moyen' : 'faible',
     reasons: raisons,
+    matches,
     features: signaux,
     computedAt: new Date(),
     modele: modele ? { exemples: modele.samples, exactitude: modele.accuracy } : null,
@@ -209,7 +369,8 @@ exports.evaluer = async (annonce) => {
 /** Calcule et enregistre le score d'une annonce. Ne lève jamais d'erreur. */
 exports.mettreAJour = async (propertyId) => {
   try {
-    const annonce = await Property.findById(propertyId).select('+images.hash +risk').lean();
+    const annonce = await Property.findById(propertyId)
+      .select('+images.hash +images.phash +images.phashMiroir +approvedPrice +risk').lean();
     if (!annonce) return null;
     const r = await exports.evaluer(annonce);
     const { modele, ...aStocker } = r;

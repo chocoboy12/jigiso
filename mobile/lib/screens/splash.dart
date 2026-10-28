@@ -6,6 +6,8 @@ import '../widgets/jigiso_logo.dart';
 import 'auth.dart';
 import 'owner_home.dart';
 import 'shell.dart';
+import '../state/prefs.dart';
+import 'onboarding.dart';
 
 /// Les pièces du logo se posent une à une, puis on passe à l'accueil.
 class SplashScreen extends StatefulWidget {
@@ -16,6 +18,13 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   bool done = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Photo de l'écran de bienvenue décodée pendant l'animation : elle s'affiche d'emblée
+    precacheImage(const AssetImage('assets/images/bienvenue.jpg'), context);
+  }
 
   void _finish() async {
     setState(() => done = true);
@@ -37,7 +46,8 @@ class _SplashScreenState extends State<SplashScreen> {
     final u = AppScope.of(context).user;
     Navigator.of(context).pushReplacement(fadeRoute(
       u == null
-          ? const WelcomeScreen()
+          // Premier lancement : la présentation, une seule fois
+          ? (Prefs.lire<bool>('onboardingVu', false) ? const WelcomeScreen() : const OnboardingScreen())
           : u.role == 'owner'
               ? const OwnerShell()
               : const Shell(),

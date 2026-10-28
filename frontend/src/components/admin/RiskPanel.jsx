@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Icon from '../common/Icon';
 import { adminAPI } from '../../services/api';
 
@@ -46,6 +47,11 @@ export default function RiskPanel({ propertyId }) {
         </p>
       </div>
 
+      <p className="mt-4 text-[12.5px] text-clay-500">
+        Des indices pour orienter la vérification, pas une accusation : un immeuble partagé, une agence ou une
+        erreur de saisie expliquent souvent un signal. Comparez, contactez le propriétaire si besoin, puis décidez.
+      </p>
+
       {r.reasons?.length > 0 ? (
         <ul className="mt-5 space-y-2">
           {r.reasons.map(raison => (
@@ -59,6 +65,22 @@ export default function RiskPanel({ propertyId }) {
         <p className="mt-5 flex items-center gap-2 text-[14px] text-leaf">
           <Icon name="check-circle" size={13} /> Aucun signal d’alerte.
         </p>
+      )}
+
+      {r.matches?.length > 0 && (
+        <div className="mt-5 border-t border-ink/10 pt-4">
+          <p className="label mb-2">Annonces à comparer</p>
+          <ul className="space-y-1.5">
+            {r.matches.map(m => (
+              <li key={m.property} className="text-[14px]">
+                <Link to={`/admin/logements/${m.property}`} className="font-semibold text-gold-deep hover:text-gold">
+                  {m.title}
+                </Link>
+                <span className="text-clay-500"> · {m.motif}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

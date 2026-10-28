@@ -29,6 +29,12 @@ class Api {
   static String get origin => base.replaceAll(RegExp(r'/api/?$'), '');
   static String? token;
 
+  /* Un seul client HTTP pour toute l'app : la connexion au serveur est
+     réutilisée d'une requête à l'autre (keep-alive) au lieu d'être rouverte
+     à chaque fois. Sur un réseau 3G, chaque nouvelle connexion coûte
+     plusieurs allers-retours avant même d'envoyer la requête. */
+  static final _client = http.Client();
+
   /// Fichier multipart avec son type MIME réel. Sans lui, `fromPath` envoie
   /// « application/octet-stream » et le serveur (filtre multer) refuse l'image.
   static Future<http.MultipartFile> _image(String field, File f) {
@@ -68,7 +74,7 @@ class Api {
 
   /// Logements semblables à une annonce, chacun avec la raison de la suggestion.
   static Future<List<({Property property, String raison})>> similaires(String id) async {
-    final r = await http.get(Uri.parse('$base/properties/$id/similar?limit=6'), headers: _h)
+    final r = await _client.get(Uri.parse('$base/properties/$id/similar?limit=6'), headers: _h)
         .timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) return [];
     final List liste = jsonDecode(r.body)['properties'] ?? [];
@@ -80,7 +86,7 @@ class Api {
 
   /// Loyer comparé aux annonces semblables ; null si pas assez de comparables.
   static Future<Map<String, dynamic>?> prixDuMarche(String id) async {
-    final r = await http.get(Uri.parse('$base/properties/$id/price-insight'), headers: _h)
+    final r = await _client.get(Uri.parse('$base/properties/$id/price-insight'), headers: _h)
         .timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) return null;
     final i = jsonDecode(r.body)['insight'] as Map<String, dynamic>?;
@@ -104,7 +110,7 @@ class Api {
   }
 
   static Future<AppConfig> appConfig() async {
-    final r = await http.get(Uri.parse('$base/app/config')).timeout(const Duration(seconds: 6));
+    final r = await _client.get(Uri.parse('$base/app/config')).timeout(const Duration(seconds: 6));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     final j = jsonDecode(r.body);
     return AppConfig.fromJson((j['config'] ?? j) as Map<String, dynamic>);
@@ -121,7 +127,7 @@ class Api {
       if (type != null) 'type': type,
       if (maxPrice != null) 'maxPrice': '$maxPrice',
     };
-    final r = await http.get(Uri.parse('$base/properties').replace(queryParameters: q), headers: _h)
+    final r = await _client.get(Uri.parse('$base/properties').replace(queryParameters: q), headers: _h)
         .timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     final body = jsonDecode(r.body);
@@ -136,7 +142,7 @@ class Api {
   /// site en une requête. Il faut donc recharger l'annonce pour afficher
   /// « Appeler » et « WhatsApp ».
   static Future<Property> property(String id) async {
-    final r = await http.get(Uri.parse('$base/properties/$id'), headers: _h)
+    final r = await _client.get(Uri.parse('$base/properties/$id'), headers: _h)
         .timeout(const Duration(seconds: 10));
     if (r.statusCode >= 300) throw _erreurServeur(r);
     final b = jsonDecode(r.body);
@@ -151,7 +157,7 @@ class Api {
       _auth('register', {'name': name, 'phone': phone, 'email': email, 'password': password, 'role': role});
 
   static Future<AppUser> _auth(String path, Map<String, String> body) async {
-    final r = await http.post(Uri.parse('$base/auth/$path'), headers: _h, body: jsonEncode(body)).timeout(const Duration(seconds: 8));
+    final r = await _client.post(Uri.parse('$base/auth/$path'), headers: _h, body: jsonEncode(body)).timeout(const Duration(seconds: 8));
     if (r.statusCode >= 300) throw _erreurServeur(r);
     final j = jsonDecode(r.body);
     await _memoriserJeton(j['token'] as String?);
@@ -236,7 +242,7 @@ class Api {
     if (enregistre == null || enregistre.isEmpty) return null;
     token = enregistre;
 
-    final r = await http.get(Uri.parse('$base/users/profile'), headers: _h)
+    final r = await _client.get(Uri.parse('$base/users/profile'), headers: _h)
         .timeout(const Duration(seconds: 15));
 
     if (r.statusCode >= 300) {
@@ -274,7 +280,7 @@ class Api {
     // Chaîne vide volontairement transmise : c'est ainsi qu'on retire le numéro.
     if (whatsapp != null) req.fields['whatsapp'] = whatsapp;
     if (photo != null) req.files.add(await _image('profileImage', photo));
-    final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 60)));
+    final r = await http.Response.fromStream(await _client.send(req).timeout(const Duration(seconds: 60)));
     if (r.statusCode >= 300) throw _erreurServeur(r);
     return AppUser.fromJson(jsonDecode(r.body)['user'] as Map<String, dynamic>, resolve);
   }
@@ -287,7 +293,7 @@ class Api {
   /// session ici, et l'appelant doit renvoyer vers l'écran de connexion —
   /// sinon la requête suivante échouerait en 401 sans explication.
   static Future<String> changePassword(String actuel, String nouveau) async {
-    final r = await http.put(Uri.parse('$base/users/change-password'), headers: _h,
+    final r = await _client.put(Uri.parse('$base/users/change-password'), headers: _h,
         body: jsonEncode({'currentPassword': actuel, 'newPassword': nouveau}))
         .timeout(const Duration(seconds: 12));
     if (r.statusCode >= 300) throw _erreurServeur(r);
@@ -304,18 +310,18 @@ class Api {
       ..files.add(await _image('id_front', front))
       ..files.add(await _image('selfie', selfie));
     if (back != null) kyc.files.add(await _image('id_back', back));
-    final r1 = await http.Response.fromStream(await kyc.send().timeout(const Duration(seconds: 60)));
+    final r1 = await http.Response.fromStream(await _client.send(kyc).timeout(const Duration(seconds: 60)));
     if (r1.statusCode >= 300) throw _erreurServeur(r1);
 
     final photo = http.MultipartRequest('PUT', Uri.parse('$base/users/profile'))
       ..headers.addAll({if (token != null) 'Authorization': 'Bearer $token'})
       ..files.add(await _image('profileImage', profilePhoto));
-    await photo.send().timeout(const Duration(seconds: 60));
+    await _client.send(photo).timeout(const Duration(seconds: 60));
   }
 
   // ─── Espace propriétaire ───────────────────────────────
   static Future<List<Property>> myProperties() async {
-    final r = await http.get(Uri.parse('$base/properties/my-properties'), headers: _h).timeout(const Duration(seconds: 8));
+    final r = await _client.get(Uri.parse('$base/properties/my-properties'), headers: _h).timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     final b = jsonDecode(r.body);
     final List list = b is List ? b : (b['properties'] ?? b['data'] ?? []);
@@ -323,28 +329,28 @@ class Api {
   }
 
   static Future<Map<String, dynamic>> ownerStats() async {
-    final r = await http.get(Uri.parse('$base/properties/stats'), headers: _h).timeout(const Duration(seconds: 8));
+    final r = await _client.get(Uri.parse('$base/properties/stats'), headers: _h).timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     final b = jsonDecode(r.body);
     return (b['stats'] ?? b) as Map<String, dynamic>;
   }
 
   static Future<Map<String, dynamic>> verificationStatus() async {
-    final r = await http.get(Uri.parse('$base/verification/status'), headers: _h).timeout(const Duration(seconds: 8));
+    final r = await _client.get(Uri.parse('$base/verification/status'), headers: _h).timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     return (jsonDecode(r.body)['status'] ?? {}) as Map<String, dynamic>;
   }
 
   /// Demandes de location (reçues pour un propriétaire, envoyées pour un locataire)
   static Future<List<Map<String, dynamic>>> rentalRequests() async {
-    final r = await http.get(Uri.parse('$base/rental-requests'), headers: _h).timeout(const Duration(seconds: 8));
+    final r = await _client.get(Uri.parse('$base/rental-requests'), headers: _h).timeout(const Duration(seconds: 8));
     if (r.statusCode != 200) throw Exception('HTTP ${r.statusCode}');
     final b = jsonDecode(r.body);
     return ((b is List ? b : b['requests'] ?? []) as List).cast<Map<String, dynamic>>();
   }
 
   static Future<void> updateRequest(String id, String status) async {
-    final r = await http.put(Uri.parse('$base/rental-requests/$id'), headers: _h, body: jsonEncode({'status': status}));
+    final r = await _client.put(Uri.parse('$base/rental-requests/$id'), headers: _h, body: jsonEncode({'status': status}));
     if (r.statusCode >= 300) throw Exception('HTTP ${r.statusCode}');
   }
 
@@ -357,18 +363,170 @@ class Api {
       ..fields['contract'] = jsonEncode(contract);
     if (location != null) req.fields['location'] = jsonEncode(location);
     for (final f in photos) { req.files.add(await _image('images', f)); }
-    final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 60)));
+    final r = await http.Response.fromStream(await _client.send(req).timeout(const Duration(seconds: 60)));
     if (r.statusCode >= 300) throw _erreurServeur(r);
+  }
+
+  /// Favoris du compte, avec l'annonce complète (même hors de la ville affichée).
+  static Future<List<Property>> favoris() async {
+    final r = await _client.get(Uri.parse('$base/favorites'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    final List l = jsonDecode(r.body)['favorites'] ?? [];
+    return l.map((f) => f['property']).whereType<Map<String, dynamic>>()
+        .map((j) => Property.fromJson(j, resolve)).toList();
+  }
+
+  /// Photos réelles du Mali servies par le serveur (accueil, présentation),
+  /// avec légende, photographe et licence — à créditer à l'affichage.
+  static Future<List<Map<String, dynamic>>> photosMali() async {
+    final r = await _client.get(Uri.parse('$base/showcase')).timeout(const Duration(seconds: 8));
+    if (r.statusCode != 200) return [];
+    return ((jsonDecode(r.body)['photos'] ?? []) as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Signaler une annonce (fausse annonce, fraude…). Compte requis.
+  static Future<void> signaler(String propertyId, String motif, String details) async {
+    final r = await _client.post(Uri.parse('$base/reports'), headers: _h,
+        body: jsonEncode({'propertyId': propertyId, 'reason': motif, 'description': details}))
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+  }
+
+  // ── Visites ───────────────────────────────────────────────────────────
+  static Future<List<Visite>> visites() async {
+    final r = await _client.get(Uri.parse('$base/visits'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return ((jsonDecode(r.body)['visits'] ?? []) as List).map((v) => Visite.fromJson(v as Map<String, dynamic>, resolve)).toList();
+  }
+
+  static Future<String> proposerVisite(String propertyId, DateTime date, String note) async {
+    final r = await _client.post(Uri.parse('$base/visits'), headers: _h,
+        body: jsonEncode({'propertyId': propertyId, 'date': date.toUtc().toIso8601String(), 'note': note}))
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+    return '${jsonDecode(r.body)['message'] ?? ''}';
+  }
+
+  /// action : confirmer | refuser | annuler | proposer (date) | accepter | deplacer (date)
+  static Future<void> majVisite(String id, String action, {DateTime? date}) async {
+    final r = await _client.put(Uri.parse('$base/visits/$id'), headers: _h,
+        body: jsonEncode({'action': action, if (date != null) 'date': date.toUtc().toIso8601String()}))
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+  }
+
+  /// Créneaux libres pour visiter un logement, jour par jour (heures de Bamako).
+  /// [visitId] : visite déplacée, dont le créneau actuel ne compte pas comme pris.
+  static Future<({int duree, List<(DateTime, List<DateTime>)> jours})> creneaux(String propertyId,
+      {required DateTime depuis, int jours = 14, String? visitId}) async {
+    final q = {
+      'from': depuis.toUtc().toIso8601String().substring(0, 10), 'days': '$jours',
+      if (visitId != null) 'visit': visitId,
+    };
+    final r = await _client.get(Uri.parse('$base/visits/creneaux/$propertyId').replace(queryParameters: q), headers: _h)
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    return (
+      duree: (j['duree'] as num?)?.toInt() ?? 60,
+      jours: ((j['jours'] ?? []) as List).map((d) => (
+        DateTime.parse('${d['date']}T00:00:00Z'),
+        ((d['creneaux'] ?? []) as List).map((c) => DateTime.parse('$c').toUtc()).toList(),
+      )).toList(),
+    );
+  }
+
+  static Future<Disponibilites> disponibilites() async {
+    final r = await _client.get(Uri.parse('$base/visits/disponibilites'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return Disponibilites.fromJson(Map<String, dynamic>.from(jsonDecode(r.body)['disponibilites'] ?? {}));
+  }
+
+  static Future<String> majDisponibilites(Disponibilites d) async {
+    final r = await _client.put(Uri.parse('$base/visits/disponibilites'), headers: _h, body: jsonEncode(d.toJson()))
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+    return '${jsonDecode(r.body)['message'] ?? ''}';
+  }
+
+  /// Lieux à moins d'un kilomètre (OpenStreetMap). `statut` : ok | enCours | indisponible | sansPosition
+  static Future<Map<String, dynamic>> alentours(String propertyId) async {
+    final r = await _client.get(Uri.parse('$base/properties/$propertyId/alentours'), headers: _h)
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return Map<String, dynamic>.from(jsonDecode(r.body));
+  }
+
+  /// Signaler un lieu manquant (publié après vérification par l'admin)
+  static Future<String> proposerLieu({required String categorie, required String genre, required String nom,
+      required double lat, required double lng}) async {
+    final r = await _client.post(Uri.parse('$base/lieux'), headers: _h,
+        body: jsonEncode({'categorie': categorie, 'genre': genre, 'nom': nom, 'lat': lat, 'lng': lng}))
+        .timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+    return '${jsonDecode(r.body)['message'] ?? ''}';
+  }
+
+  /// Historique d'activité du compte
+  static Future<List<Map<String, dynamic>>> activite() async {
+    final r = await _client.get(Uri.parse('$base/users/activity'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return ((jsonDecode(r.body)['activity'] ?? []) as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Demandes de location envoyées (locataire), avec l'annonce
+  static Future<List<RentalRequest>> mesDemandes() async {
+    final r = await _client.get(Uri.parse('$base/rental-requests'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return ((jsonDecode(r.body)['requests'] ?? []) as List)
+        .map((j) => RentalRequest.fromJson(j as Map<String, dynamic>, resolve)).toList();
+  }
+
+  // ── Alertes ───────────────────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> alertes() async {
+    final r = await _client.get(Uri.parse('$base/alerts'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) throw _erreurServeur(r);
+    return ((jsonDecode(r.body)['alerts'] ?? []) as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Crée une alerte ; renvoie le message du serveur (« 2 logements correspondent déjà »).
+  static Future<String> creerAlerte(String nom, Map<String, dynamic> criteres) async {
+    final r = await _client.post(Uri.parse('$base/alerts'), headers: _h,
+        body: jsonEncode({'name': nom, 'criteria': criteres})).timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+    return '${jsonDecode(r.body)['message'] ?? 'Alerte créée.'}';
+  }
+
+  static Future<void> supprimerAlerte(String id) async {
+    final r = await _client.delete(Uri.parse('$base/alerts/$id'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+  }
+
+  static Future<void> basculerAlerte(String id) async {
+    final r = await _client.put(Uri.parse('$base/alerts/$id/toggle'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode >= 300) throw _erreurServeur(r);
+  }
+
+  /// Annonces publiées depuis la dernière consultation et qui correspondent aux alertes.
+  static Future<List<Property>> nouveautesAlertes() async {
+    final r = await _client.get(Uri.parse('$base/alerts/new'), headers: _h).timeout(const Duration(seconds: 10));
+    if (r.statusCode != 200) return [];
+    final List l = jsonDecode(r.body)['properties'] ?? [];
+    return l.map((j) => Property.fromJson(j as Map<String, dynamic>, resolve)).toList();
+  }
+
+  static Future<void> alertesVues() async {
+    await _client.post(Uri.parse('$base/alerts/seen'), headers: _h).timeout(const Duration(seconds: 10));
   }
 
   static Future<void> setFavorite(String id, bool add) async {
     final u = Uri.parse('$base/favorites/$id');
-    final r = add ? await http.post(u, headers: _h) : await http.delete(u, headers: _h);
+    final r = add ? await _client.post(u, headers: _h) : await _client.delete(u, headers: _h);
     if (r.statusCode >= 300) throw Exception('HTTP ${r.statusCode}');
   }
 
   static Future<void> createRentalRequest(RentalRequest q) async {
-    final r = await http.post(Uri.parse('$base/rental-requests'), headers: _h, body: jsonEncode({
+    final r = await _client.post(Uri.parse('$base/rental-requests'), headers: _h, body: jsonEncode({
       'ownerId': q.property.ownerId,
       'propertyId': q.property.id,
       'moveInDate': q.moveIn.toIso8601String().substring(0, 10),

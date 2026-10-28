@@ -13,7 +13,7 @@ void showRequestSheet(BuildContext context, Property p) => showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: J.ink.withOpacity(.6),
+      barrierColor: J.night.withOpacity(.6),
       builder: (_) => RequestSheet(p),
     );
 
@@ -55,11 +55,12 @@ class _RequestSheetState extends State<RequestSheet> {
     final demain = DateTime.now().add(const Duration(days: 1));
     final d = await showDatePicker(
       context: context,
-      locale: Locale(AppScope.of(context).lang),
+      // Le calendrier système n'existe pas en bambara : il s'affiche alors en français
+      locale: Locale(AppScope.of(context).lang == 'en' ? 'en' : 'fr'),
       initialDate: autreDate ?? demain,
       firstDate: DateTime(demain.year, demain.month, demain.day),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      helpText: AppScope.of(context).lang == 'fr' ? 'DATE D\'ENTRÉE' : 'MOVE-IN DATE',
+      helpText: AppScope.of(context).t('req.moveIn'),
       builder: (c, child) => Theme(
         data: Theme.of(c).copyWith(colorScheme: Theme.of(c).colorScheme.copyWith(primary: J.ink, onPrimary: J.cream, secondary: J.gold)),
         child: child!,
@@ -93,7 +94,7 @@ class _RequestSheetState extends State<RequestSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + MediaQuery.of(context).padding.bottom),
-        decoration: const BoxDecoration(color: J.cream, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        decoration: BoxDecoration(color: J.cream, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: J.line, borderRadius: BorderRadius.circular(3)))),
           const SizedBox(height: 16),
@@ -120,7 +121,7 @@ class _RequestSheetState extends State<RequestSheet> {
             Text(
               date == _autre
                   ? '${autreDate!.day} ${_months[autreDate!.month - 1]} ${autreDate!.year} · ${s.lang == 'fr' ? 'modifier' : 'change'}'
-                  : (s.lang == 'fr' ? 'Choisir une autre date' : 'Pick another date'),
+                  : tr(context, 'rq.otherDate'),
               style: J.sans(14, c: date == _autre ? J.cream : J.ink, w: FontWeight.w600),
             ),
           ]), height: 44),
@@ -145,7 +146,7 @@ class _RequestSheetState extends State<RequestSheet> {
               hintStyle: J.sans(15, c: J.clay300),
               filled: true, fillColor: J.card,
               contentPadding: const EdgeInsets.all(12),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: J.line)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: J.line)),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: J.gold, width: 1.5)),
             ),
           ),

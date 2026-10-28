@@ -33,7 +33,7 @@ class Shell extends StatelessWidget {
           (Icons.mail_outline_rounded, s.t('tab.req')),
           (Icons.person_outline_rounded, s.t('tab.me')),
         ],
-        badges: [0, s.favorites.length, s.requests.length, 0],
+        badges: [0, s.favorites.length, s.requests.length + s.visitesEnAttente, 0],
         fabIcon: Icons.my_location_rounded,
         onFab: () async {
           final p = await currentPlace(context);
@@ -53,13 +53,17 @@ class KitNavBar extends StatelessWidget {
   final IconData fabIcon;
   final Color fabBg, fabFg, accent;
   final VoidCallback onFab;
-  const KitNavBar({super.key, required this.index, required this.onTap, required this.items, this.badges, required this.fabIcon, this.fabBg = J.ink, this.fabFg = J.gold, this.accent = J.gold, required this.onFab});
+  KitNavBar({super.key, required this.index, required this.onTap, required this.items, this.badges, required this.fabIcon, Color? fabBg, this.fabFg = J.gold, this.accent = J.gold, required this.onFab}) : fabBg = fabBg ?? J.ink;
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
     Widget item(int i) => Expanded(
-          child: GestureDetector(
+          // Lecteur d'écran : chaque onglet annoncé comme un bouton, avec son état
+          child: Semantics(
+            button: true, selected: index == i, label: items[i].$2,
+            excludeSemantics: true,
+            child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () { HapticFeedback.selectionClick(); onTap(i); },
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -74,11 +78,17 @@ class KitNavBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 3),
-              Text(items[i].$2, style: J.ui(10, c: index == i ? accent : J.clay300, w: index == i ? FontWeight.w700 : FontWeight.w600)),
+              // La barre a une hauteur fixe : son texte grandit, mais pas au-delà de 120 %
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Text(items[i].$2, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: J.ui(12, c: index == i ? J.goldDeep : J.clay500, w: index == i ? FontWeight.w800 : FontWeight.w600)),
+              ),
               const SizedBox(height: 4),
               AnimatedContainer(duration: const Duration(milliseconds: 220), width: index == i ? 18 : 0, height: 3,
                   decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(2))),
             ]),
+          ),
           ),
         );
     return SizedBox(
@@ -88,8 +98,8 @@ class KitNavBar extends StatelessWidget {
           top: 0,
           child: Container(
             padding: EdgeInsets.fromLTRB(10, 12, 10, bottom),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                boxShadow: [BoxShadow(color: J.ink.withOpacity(.12), blurRadius: 30, offset: const Offset(0, -8), spreadRadius: -10)]),
+            decoration: BoxDecoration(color: J.surface, borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [BoxShadow(color: J.night.withOpacity(.12), blurRadius: 30, offset: const Offset(0, -8), spreadRadius: -10)]),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [item(0), item(1), const SizedBox(width: 72), item(2), item(3)]),
           ),
         ),

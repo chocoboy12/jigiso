@@ -7,8 +7,12 @@ import '../theme.dart';
 import '../widgets/property_card.dart' show PropertyPhoto;
 import 'add_property.dart';
 import 'profile.dart';
+import 'requests.dart' show ongletsDemandesVisites;
 import 'shell.dart';
 import 'verification.dart';
+import 'visits.dart';
+import 'availability.dart';
+import 'auth.dart' show slideRoute;
 
 /// Espace propriétaire — séparé de l'espace locataire (accent vert, navigation propre).
 /// Toutes les données viennent de l'API : aucune donnée inventée.
@@ -34,7 +38,7 @@ class _OwnerShellState extends State<OwnerShell> {
   Widget build(BuildContext context) => ListenableBuilder(
         listenable: data,
         builder: (_, __) => Scaffold(
-          backgroundColor: const Color(0xFFF4F7F5),
+          backgroundColor: J.x(0xFFF4F7F5),
           extendBody: true,
           body: AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
@@ -48,8 +52,8 @@ class _OwnerShellState extends State<OwnerShell> {
           bottomNavigationBar: KitNavBar(
             index: tab,
             onTap: (i) => setState(() => tab = i),
-            items: const [(Icons.dashboard_rounded, 'Tableau'), (Icons.holiday_village_outlined, 'Annonces'), (Icons.inbox_outlined, 'Demandes'), (Icons.person_outline_rounded, 'Profil')],
-            badges: [0, 0, data.pending, 0],
+            items: [(Icons.dashboard_rounded, tr(context, 'ow.tabBoard')), (Icons.holiday_village_outlined, tr(context, 'ow.tabListings')), (Icons.inbox_outlined, tr(context, 'reqs.tabReq')), (Icons.person_outline_rounded, tr(context, 'ow.tabMe'))],
+            badges: [0, 0, data.pending + AppScope.of(context).visitesEnAttente, 0],
             accent: J.leaf,
             fabIcon: Icons.add_rounded, fabBg: J.leaf, fabFg: Colors.white,
             onFab: _publish,
@@ -82,7 +86,7 @@ class OwnerData extends ChangeNotifier {
       stats = r[2] as Map<String, dynamic>;
       verification = r[3] as Map<String, dynamic>;
     } catch (e) {
-      error = 'Impossible de joindre le serveur.';
+      error = 'err.server';   // clé traduite à l'affichage (_errorBox)
     }
     loading = false; notifyListeners();
   }
@@ -118,15 +122,15 @@ class OwnerDashboard extends StatelessWidget {
               CircleAvatar(radius: 23, backgroundColor: Colors.white.withOpacity(.12), child: Text(initials(s.user?.name ?? ''), style: J.ui(16, c: Colors.white, w: FontWeight.w700))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Espace propriétaire', style: J.ui(12, c: const Color(0xFFA8C9B4))),
-                Text('Bonjour ${(s.user?.name ?? '').split(' ').first}', style: J.ui(18, c: Colors.white, w: FontWeight.w800)),
+                Text(tr(context, 'me.owner'), style: J.ui(12, c: const Color(0xFFA8C9B4))),
+                Text('${tr(context, 'ow.hello')} ${(s.user?.name ?? '').split(' ').first}', style: J.ui(18, c: Colors.white, w: FontWeight.w800)),
               ])),
             ]),
             const SizedBox(height: 18),
             Row(children: [
-              _stat('${data.listings.length}', 'Annonces'), const SizedBox(width: 8),
+              _stat('${data.listings.length}', tr(context, 'ow.tabListings')), const SizedBox(width: 8),
               _stat(fcfa(views), 'Vues'), const SizedBox(width: 8),
-              _stat('${data.pending}', 'Demandes'),
+              _stat('${data.pending}', tr(context, 'reqs.tabReq')),
             ]),
           ]),
         ),
@@ -134,19 +138,24 @@ class OwnerDashboard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 130),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             if (data.error != null) _errorBox(data.error!, data.load),
+            // Visites : la prochaine, et celles qui attendent une réponse
+            if (s.prochaineVisite != null || s.visitesEnAttente > 0) ...[
+              BandeauVisites(onTap: () => onTab(2)),
+              const SizedBox(height: 14),
+            ],
             if (data.draft) ...[
               Pressable(
                 onTap: onPublish,
                 child: Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: const Color(0xFFFBF6EA), borderRadius: BorderRadius.circular(20), border: Border.all(color: J.gold, width: 1.5)),
+                  decoration: BoxDecoration(color: J.x(0xFFFBF6EA), borderRadius: BorderRadius.circular(20), border: Border.all(color: J.gold, width: 1.5)),
                   child: Row(children: [
-                    Container(width: 44, height: 44, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+                    Container(width: 44, height: 44, decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(14)),
                         child: const Icon(Icons.edit_note_rounded, color: J.gold)),
                     const SizedBox(width: 12),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Annonce en cours', style: J.ui(15, w: FontWeight.w800)),
-                      Text('Reprenez là où vous vous êtes arrêté', style: J.ui(12, c: J.clay500)),
+                      Text(tr(context, 'ow.draft'), style: J.ui(15, w: FontWeight.w800)),
+                      Text(tr(context, 'ow.draftSub'), style: J.ui(12, c: J.clay500)),
                     ])),
                     Text('Reprendre', style: J.ui(14, c: J.gold, w: FontWeight.w800)),
                     const Icon(Icons.chevron_right_rounded, color: J.gold),
@@ -160,32 +169,32 @@ class OwnerDashboard extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen())),
                 child: Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: const Color(0xFFFBF6EA), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFFE7CE97), width: 1.5)),
+                  decoration: BoxDecoration(color: J.x(0xFFFBF6EA), borderRadius: BorderRadius.circular(20), border: Border.all(color: J.x(0xFFE7CE97), width: 1.5)),
                   child: Row(children: [
-                    Container(width: 44, height: 44, decoration: BoxDecoration(color: J.gold, borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.verified_user_outlined, color: J.ink)),
+                    Container(width: 44, height: 44, decoration: BoxDecoration(color: J.gold, borderRadius: BorderRadius.circular(14)), child: Icon(Icons.verified_user_outlined, color: J.ink)),
                     const SizedBox(width: 12),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Vérifiez votre compte', style: J.ui(14, w: FontWeight.w700)),
-                      Text('Photo + CNI, carte NINA ou passeport', style: J.ui(12, c: J.goldDark)),
+                      Text(tr(context, 'ow.verify'), style: J.ui(14, w: FontWeight.w700)),
+                      Text(tr(context, 'ow.verifySub'), style: J.ui(12, c: J.goldDark)),
                     ])),
-                    const Icon(Icons.chevron_right_rounded, color: J.goldDeep),
+                    Icon(Icons.chevron_right_rounded, color: J.goldDeep),
                   ]),
                 ),
               ),
               const SizedBox(height: 14),
             ],
             if (data.loading)
-              const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator(color: J.leaf)))
+              Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator(color: J.leaf)))
             else if (data.listings.isEmpty)
-              _firstListing(onPublish)
+              _firstListing(context, onPublish)
             else ...[
-              _head('Mes annonces', 'Tout voir', () => onTab(1)),
+              _head(tr(context, 'ow.myListings'), tr(context, 'ow.seeAll'), () => onTab(1)),
               for (final p in data.listings.take(3)) ListingRow(p),
             ],
             const SizedBox(height: 18),
-            _head('Demandes reçues', data.requests.isEmpty ? null : 'Tout voir', () => onTab(2)),
+            _head(tr(context, 'ow.received'), data.requests.isEmpty ? null : tr(context, 'ow.seeAll'), () => onTab(2)),
             if (!data.loading && data.requests.isEmpty)
-              const EmptyBox(icon: Icons.inbox_outlined, title: 'Aucune demande pour l\'instant', body: 'Les demandes des locataires arriveront ici.')
+              EmptyBox(icon: Icons.inbox_outlined, title: tr(context, 'ow.noReq'), body: tr(context, 'ow.noReqSub'))
             else
               for (final r in data.requests.where((r) => r['status'] == 'pending').take(3)) RequestCard(r, data: data),
           ]),
@@ -196,27 +205,27 @@ class OwnerDashboard extends StatelessWidget {
 
   Widget _stat(String v, String l) => Expanded(child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(.1), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: J.surface.withOpacity(.1), borderRadius: BorderRadius.circular(14)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(v, style: J.ui(20, c: Colors.white, w: FontWeight.w800)),
           Text(l, style: J.ui(11, c: const Color(0xFFA8C9B4))),
         ]),
       ));
 
-  Widget _firstListing(VoidCallback f) => Container(
+  Widget _firstListing(BuildContext context, VoidCallback f) => Container(
         padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: J.softShadow),
+        decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(24), boxShadow: J.softShadow),
         child: Column(children: [
-          Container(width: 64, height: 64, decoration: BoxDecoration(color: const Color(0xFFE6F0EA), borderRadius: BorderRadius.circular(20)), child: const Icon(Icons.add_home_outlined, size: 32, color: J.leaf)),
+          Container(width: 64, height: 64, decoration: BoxDecoration(color: J.x(0xFFE6F0EA), borderRadius: BorderRadius.circular(20)), child: Icon(Icons.add_home_outlined, size: 32, color: J.leaf)),
           const SizedBox(height: 12),
-          Text('Publiez votre premier logement', style: J.ui(18, w: FontWeight.w800)),
+          Text(tr(context, 'ow.first'), style: J.ui(18, w: FontWeight.w800)),
           const SizedBox(height: 6),
-          Text('Ajoutez des photos, la localisation et le loyer. L\'équipe Jigiso valide l\'annonce avant sa mise en ligne.', textAlign: TextAlign.center, style: J.ui(13, c: J.clay500, w: FontWeight.w400, h: 1.5)),
+          Text(tr(context, 'ow.firstSub'), textAlign: TextAlign.center, style: J.ui(13, c: J.clay500, w: FontWeight.w400, h: 1.5)),
           const SizedBox(height: 14),
           Pressable(onTap: f, child: Container(
             height: 48, padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: BoxDecoration(color: J.leaf, borderRadius: BorderRadius.circular(16)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.add_a_photo_outlined, color: Colors.white, size: 20), const SizedBox(width: 6), Text('Publier un logement', style: J.ui(14, c: Colors.white, w: FontWeight.w700))]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.add_a_photo_outlined, color: Colors.white, size: 20), const SizedBox(width: 6), Text(tr(context, 'ow.publish'), style: J.ui(14, c: Colors.white, w: FontWeight.w700))]),
           )),
         ]),
       );
@@ -231,17 +240,18 @@ Widget _head(String t, String? more, VoidCallback f) => Padding(
       ]),
     );
 
-Widget _errorBox(String msg, VoidCallback retry) => Container(
+Widget _errorBox(String msg, VoidCallback retry) => Builder(builder: (context) => Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: const Color(0xFFF9E9E2), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: J.x(0xFFF9E9E2), borderRadius: BorderRadius.circular(16)),
       child: Row(children: [
-        const Icon(Icons.wifi_off_rounded, color: J.terracotta),
+        Icon(Icons.wifi_off_rounded, color: J.terracotta),
         const SizedBox(width: 10),
-        Expanded(child: Text(msg, style: J.ui(13, c: J.terracotta, w: FontWeight.w600))),
-        TextButton(onPressed: retry, child: Text('Réessayer', style: J.ui(13, c: J.terracotta, w: FontWeight.w700))),
+        // Clé de traduction (erreur réseau) ou message du serveur, affiché tel quel
+        Expanded(child: Text(tr(context, msg), style: J.ui(13, c: J.terracotta, w: FontWeight.w600))),
+        TextButton(onPressed: retry, child: Text(tr(context, 'ow.retry'), style: J.ui(13, c: J.terracotta, w: FontWeight.w700))),
       ]),
-    );
+    ));
 
 class EmptyBox extends StatelessWidget {
   final IconData icon;
@@ -250,9 +260,9 @@ class EmptyBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(26),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFE1D8C8), width: 1.5)),
+        decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(24), border: Border.all(color: J.x(0xFFE1D8C8), width: 1.5)),
         child: Column(children: [
-          Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFF5F1E8), borderRadius: BorderRadius.circular(18)), child: Icon(icon, color: J.clay300, size: 28)),
+          Container(width: 56, height: 56, decoration: BoxDecoration(color: J.x(0xFFF5F1E8), borderRadius: BorderRadius.circular(18)), child: Icon(icon, color: J.clay300, size: 28)),
           const SizedBox(height: 10),
           Text(title, textAlign: TextAlign.center, style: J.ui(16, w: FontWeight.w800)),
           const SizedBox(height: 6),
@@ -266,12 +276,12 @@ class ListingRow extends StatelessWidget {
   const ListingRow(this.p, {super.key});
   @override
   Widget build(BuildContext context) {
-    final st = {'approved': ('En ligne', const Color(0xFFEAF3ED), J.leaf), 'pending': ('En validation', const Color(0xFFFBF6EA), J.goldDeep),
-      'rejected': ('Refusée', const Color(0xFFF9E9E2), J.terracotta), 'rented': ('Louée', const Color(0xFFE6EFF4), J.river)}[p.status] ?? ('—', J.soft, J.clay500);
+    final st = {'approved': ('En ligne', J.x(0xFFEAF3ED), J.leaf), 'pending': ('En validation', J.x(0xFFFBF6EA), J.goldDeep),
+      'rejected': (tr(context, 'ow.refused'), J.x(0xFFF9E9E2), J.terracotta), 'rented': ('Louée', J.x(0xFFE6EFF4), J.river)}[p.status] ?? ('—', J.soft, J.clay500);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: J.softShadow),
+      decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(20), boxShadow: J.softShadow),
       child: Row(children: [
         ClipRRect(borderRadius: BorderRadius.circular(14), child: SizedBox(width: 70, height: 70, child: PropertyPhoto(p))),
         const SizedBox(width: 12),
@@ -280,7 +290,7 @@ class ListingRow extends StatelessWidget {
           const SizedBox(height: 3),
           Text('${p.neighborhood}, ${p.city} · ${fcfa(p.price)} FCFA', maxLines: 1, overflow: TextOverflow.ellipsis, style: J.ui(12, c: J.clay500)),
           const SizedBox(height: 3),
-          Row(children: [const Icon(Icons.visibility_outlined, size: 14, color: J.clay300), const SizedBox(width: 4), Text('${p.views} vues', style: J.ui(12, c: J.clay300))]),
+          Row(children: [Icon(Icons.visibility_outlined, size: 14, color: J.clay300), const SizedBox(width: 4), Text('${p.views} vues', style: J.ui(12, c: J.clay300))]),
         ])),
         Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5), decoration: BoxDecoration(color: st.$2, borderRadius: BorderRadius.circular(999)),
             child: Text(st.$1, style: J.ui(11, c: st.$3, w: FontWeight.w700))),
@@ -303,17 +313,17 @@ class _RequestCardState extends State<RequestCard> {
   @override
   Widget build(BuildContext context) {
     final r = widget.r;
-    final tenant = (r['tenant'] is Map ? r['tenant']['name'] : null) ?? 'Locataire';
+    final tenant = (r['tenant'] is Map ? r['tenant']['name'] : null) ?? tr(context, 'wel2.tenant');
     final prop = r['property'] is Map ? r['property']['title'] ?? '' : '';
     final st = r['status'] ?? 'pending';
     final moveIn = DateTime.tryParse('${r['moveInDate']}');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: J.softShadow),
+      decoration: BoxDecoration(color: J.surface, borderRadius: BorderRadius.circular(20), boxShadow: J.softShadow),
       child: Column(children: [
         Row(children: [
-          CircleAvatar(radius: 21, backgroundColor: const Color(0xFFE6F0EA), child: Text(initials(tenant), style: J.ui(14, c: J.leaf, w: FontWeight.w700))),
+          CircleAvatar(radius: 21, backgroundColor: J.x(0xFFE6F0EA), child: Text(initials(tenant), style: J.ui(14, c: J.leaf, w: FontWeight.w700))),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(tenant, style: J.ui(15, w: FontWeight.w700)),
@@ -322,10 +332,10 @@ class _RequestCardState extends State<RequestCard> {
         ]),
         const SizedBox(height: 10),
         Row(children: [
-          const Icon(Icons.calendar_month_outlined, size: 16, color: J.leaf), const SizedBox(width: 4),
+          Icon(Icons.calendar_month_outlined, size: 16, color: J.leaf), const SizedBox(width: 4),
           Text(moveIn != null ? '${moveIn.day}/${moveIn.month}/${moveIn.year}' : '—', style: J.ui(12, c: J.clay600)),
           const SizedBox(width: 14),
-          const Icon(Icons.schedule_rounded, size: 16, color: J.leaf), const SizedBox(width: 4),
+          Icon(Icons.schedule_rounded, size: 16, color: J.leaf), const SizedBox(width: 4),
           Text('${r['duration'] ?? '—'}', style: J.ui(12, c: J.clay600)),
         ]),
         if ((r['message'] ?? '').toString().isNotEmpty) ...[
@@ -337,17 +347,17 @@ class _RequestCardState extends State<RequestCard> {
           duration: const Duration(milliseconds: 250),
           child: st == 'pending'
               ? Row(key: const ValueKey('p'), children: [
-                  Expanded(child: _btn('Refuser', Colors.white, J.terracotta, () => _decide(false), border: true)),
+                  Expanded(child: _btn(tr(context, 'visit.refuse'), J.surface, J.terracotta, () => _decide(false), border: true)),
                   const SizedBox(width: 8),
-                  Expanded(child: _btn('Accepter', J.leaf, Colors.white, () => _decide(true))),
+                  Expanded(child: _btn(tr(context, 'ow.accept'), J.leaf, Colors.white, () => _decide(true))),
                 ])
               : Container(
                   key: ValueKey(st), height: 44,
-                  decoration: BoxDecoration(color: st == 'accepted' ? const Color(0xFFEAF3ED) : const Color(0xFFF9E9E2), borderRadius: BorderRadius.circular(14)),
+                  decoration: BoxDecoration(color: st == 'accepted' ? J.x(0xFFEAF3ED) : J.x(0xFFF9E9E2), borderRadius: BorderRadius.circular(14)),
                   child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(st == 'accepted' ? Icons.check_circle_rounded : Icons.cancel_rounded, size: 18, color: st == 'accepted' ? J.leaf : J.terracotta),
                     const SizedBox(width: 6),
-                    Text(st == 'accepted' ? 'Acceptée — logement réservé' : st == 'cancelled' ? 'Annulée' : 'Refusée',
+                    Text(st == 'accepted' ? tr(context, 'ow.accepted') : st == 'cancelled' ? tr(context, 'ow.cancelled') : tr(context, 'ow.refused'),
                         style: J.ui(14, c: st == 'accepted' ? J.leaf : J.terracotta, w: FontWeight.w700)),
                   ]),
                 ),
@@ -361,7 +371,7 @@ class _RequestCardState extends State<RequestCard> {
     HapticFeedback.mediumImpact();
     setState(() => busy = true);
     try { await widget.data.decide('${widget.r['_id']}', ok); }
-    catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Action impossible, réessayez'))); }
+    catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr(context, 'ow.actionFail')))); }
     if (mounted) setState(() => busy = false);
   }
 
@@ -382,30 +392,61 @@ class OwnerListings extends StatelessWidget {
         color: J.leaf,
         onRefresh: data.load,
         child: ListView(padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 130), children: [
-          Text('Mes annonces', style: J.ui(26, w: FontWeight.w800)),
+          Text(tr(context, 'ow.myListings'), style: J.ui(26, w: FontWeight.w800)),
           const SizedBox(height: 16),
           if (data.error != null) _errorBox(data.error!, data.load),
-          if (data.loading) const Center(child: CircularProgressIndicator(color: J.leaf))
-          else if (data.listings.isEmpty) const EmptyBox(icon: Icons.holiday_village_outlined, title: 'Aucune annonce', body: 'Touchez + pour publier votre premier logement.')
+          if (data.loading) Center(child: CircularProgressIndicator(color: J.leaf))
+          else if (data.listings.isEmpty) EmptyBox(icon: Icons.holiday_village_outlined, title: tr(context, 'ow.noListing'), body: tr(context, 'ow.noListingSub'))
           else for (final p in data.listings) ListingRow(p),
         ]),
       );
 }
 
-class OwnerRequests extends StatelessWidget {
+class OwnerRequests extends StatefulWidget {
   final OwnerData data;
   const OwnerRequests({super.key, required this.data});
   @override
-  Widget build(BuildContext context) => RefreshIndicator(
+  State<OwnerRequests> createState() => _OwnerRequestsState();
+}
+
+class _OwnerRequestsState extends State<OwnerRequests> {
+  bool visites = false;
+  OwnerData get data => widget.data;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Arrivée depuis le bandeau « visites » du tableau de bord
+    final s = AppScope.of(context);
+    if (s.ouvrirVisites) { s.ouvrirVisites = false; visites = true; }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScope.of(context);
+    return RefreshIndicator(
         color: J.leaf,
         onRefresh: data.load,
         child: ListView(padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 130), children: [
-          Text('Demandes reçues', style: J.ui(26, w: FontWeight.w800)),
+          Text(visites ? s.t('visit.t') : tr(context, 'ow.received'), style: J.ui(26, w: FontWeight.w800)),
+          const SizedBox(height: 14),
+          ongletsDemandesVisites(s, visites, (v) => setState(() => visites = v)),
           const SizedBox(height: 16),
-          if (data.error != null) _errorBox(data.error!, data.load),
-          if (data.loading) const Center(child: CircularProgressIndicator(color: J.leaf))
-          else if (data.requests.isEmpty) const EmptyBox(icon: Icons.inbox_outlined, title: 'Aucune demande pour l\'instant', body: 'Les demandes des locataires arriveront ici.')
-          else for (final r in data.requests) RequestCard(r, data: data),
+          if (visites) ...[
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(slideRoute(const AvailabilityScreen())),
+              icon: const Icon(Icons.schedule_rounded, size: 18), label: Text(s.t('avail.manage')),
+            ),
+            const SizedBox(height: 12),
+            const VisitsList(),
+          ]
+          else ...[
+            if (data.error != null) _errorBox(data.error!, data.load),
+            if (data.loading) Center(child: CircularProgressIndicator(color: J.leaf))
+            else if (data.requests.isEmpty) EmptyBox(icon: Icons.inbox_outlined, title: tr(context, 'ow.noReq'), body: tr(context, 'ow.noReqSub'))
+            else for (final r in data.requests) RequestCard(r, data: data),
+          ],
         ]),
       );
+  }
 }

@@ -32,13 +32,13 @@ class SocialButtons extends StatelessWidget {
         onTap: () => onTap(p),
         child: Container(
           height: compact ? 50 : 52,
-          decoration: BoxDecoration(color: dark ? Colors.black : Colors.white, borderRadius: BorderRadius.circular(16),
+          decoration: BoxDecoration(color: dark ? Colors.black : J.surface, borderRadius: BorderRadius.circular(16),
               border: dark ? null : Border.all(color: J.soft, width: 1.5)),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             icon(p, compact ? 22 : 20),
             if (!compact) ...[
               const SizedBox(width: 10),
-              Text('Continuer avec ${labels[p]}', style: J.ui(15, c: dark ? Colors.white : J.ink, w: FontWeight.w700)),
+              Text('Continuer avec ${labels[p]}', style: J.ui(15, c: dark ? J.onInk : J.ink, w: FontWeight.w700)),
             ],
           ]),
         ),
@@ -50,9 +50,9 @@ class SocialButtons extends StatelessWidget {
     if (ps.isEmpty) return const SizedBox.shrink();
     return Column(mainAxisSize: MainAxisSize.min, children: [
       Row(children: [
-        const Expanded(child: Divider(color: J.soft)),
+        Expanded(child: Divider(color: J.soft)),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Text(compact ? 'ou s\'inscrire avec' : 'ou', style: J.ui(13, c: J.clay300))),
-        const Expanded(child: Divider(color: J.soft)),
+        Expanded(child: Divider(color: J.soft)),
       ]),
       const SizedBox(height: 14),
       if (compact)

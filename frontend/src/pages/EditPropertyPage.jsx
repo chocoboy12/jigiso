@@ -26,6 +26,7 @@ export default function EditPropertyPage() {
         neighborhood: p.neighborhood,
         address: p.address || '',
         location: p.location?.lat ? { lat: p.location.lat, lng: p.location.lng } : null,
+        locationPrecision: p.locationPrecision || 'approx',
         bedrooms: p.bedrooms,
         bathrooms: p.bathrooms,
         area: p.area,
@@ -133,6 +134,20 @@ export default function EditPropertyPage() {
                 neighborhood={form.neighborhood}
                 address={form.address}
                 onChange={(loc) => setForm(p => ({ ...p, location: loc }))} />
+            {form.location && (
+              <label className="mt-3 flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 accent-[#1E6B3C]"
+                  checked={form.locationPrecision === 'exact'}
+                  onChange={e => setForm(p => ({ ...p, locationPrecision: e.target.checked ? 'exact' : 'approx' }))} />
+                <span>
+                  <span className="font-semibold text-ink">Afficher l’adresse exacte</span>
+                  <span className="block text-sm text-clay-500">
+                    Par défaut, l’annonce montre un cercle autour du secteur (± 400 m) et masque la rue :
+                    l’adresse exacte n’est donnée qu’aux locataires dont vous confirmez la visite.
+                  </span>
+                </span>
+              </label>
+            )}
             </div>
           </div>
         </div>

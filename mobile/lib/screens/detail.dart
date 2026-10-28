@@ -6,6 +6,10 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/property_card.dart';
 import '../widgets/coverflow.dart';
+import '../widgets/maps.dart';
+import '../widgets/nearby.dart';
+import '../widgets/share_badges.dart';
+import 'visits.dart';
 import 'request_sheet.dart';
 
 Route detailRoute(Property p) => PageRouteBuilder(
@@ -47,8 +51,20 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     Api.property(widget.p.id)
-        .then((complet) { if (mounted) setState(() => p = complet); })
-        .catchError((_) {/* hors ligne : on reste sur ce qu'on a */});
+        .then((complet) {
+          if (!mounted) return;
+          setState(() => p = complet);
+          AppScope.of(context).voir(complet);   // « récemment vus »
+        })
+        .catchError((e) {
+          if (!mounted) return;
+          // Annonce supprimée ou retirée : on la retire des « récemment vus » et on le dit
+          if (e is ApiException && e.statusCode == 404) {
+            AppScope.of(context).oublierAnnonce(widget.p.id);
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppScope.of(context).t('removed'))));
+          }
+          /* hors ligne : on reste sur ce qu'on a */
+        });
     Api.similaires(widget.p.id)
         .then((l) { if (mounted) setState(() => similaires = l); })
         .catchError((_) {});
@@ -57,10 +73,56 @@ class _DetailScreenState extends State<DetailScreen> {
         .catchError((_) {});
   }
 
-  static const _verdicts = {
-    'bas': ('Loyer plutôt bas pour ce type de bien', Icons.trending_down_rounded, J.river),
-    'moyen': ('Loyer dans la moyenne du marché', Icons.check_circle_outline_rounded, J.leaf),
-    'eleve': ('Loyer au-dessus du marché', Icons.trending_up_rounded, J.goldDeep),
+  Future<void> _signaler(AppState s) async {
+    if (s.user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.t('rep.login'))));
+      return;
+    }
+    String? motif;
+    final details = TextEditingController();
+    final envoyer = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: J.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (c) => StatefulBuilder(builder: (c, setS) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 18, 20, 20 + MediaQuery.of(c).viewInsets.bottom),
+        child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(s.t('rep.t'), style: J.ui(22, w: FontWeight.w800)),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final m in const ['fausse_annonce', 'fraude', 'mauvaise_information', 'deja_loue', 'comportement_suspect', 'autre'])
+              ChoiceChip(
+                label: Text(s.t('rep.$m')), selected: motif == m, showCheckmark: false,
+                selectedColor: J.ink, labelStyle: J.ui(13.5, c: motif == m ? J.onInk : J.ink, w: FontWeight.w600),
+                onSelected: (_) => setS(() => motif = m),
+              ),
+          ]),
+          const SizedBox(height: 12),
+          TextField(controller: details, maxLines: 3, maxLength: 500,
+              decoration: InputDecoration(hintText: s.t('rep.details'), border: const OutlineInputBorder())),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: motif == null ? null : () => Navigator.pop(c, true),
+            style: FilledButton.styleFrom(backgroundColor: J.terracotta, minimumSize: const Size.fromHeight(52)),
+            child: Text(s.t('rep.send')),
+          ),
+        ])),
+      )),
+    );
+    if (envoyer != true || motif == null || !mounted) return;
+    try {
+      await Api.signaler(p.id, motif!, details.text.trim());
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.t('rep.ok'))));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Map<String, (String, IconData, Color)> get _verdicts => {
+    'bas': (tr(context, 'dt.low'), Icons.trending_down_rounded, J.river),
+    'moyen': (tr(context, 'dt.mid'), Icons.check_circle_outline_rounded, J.leaf),
+    'eleve': (tr(context, 'dt.high'), Icons.trending_up_rounded, J.goldDeep),
   };
 
   Widget _marche(Map<String, dynamic> m) {
@@ -75,15 +137,14 @@ class _DetailScreenState extends State<DetailScreen> {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(v.$1, style: J.sans(14, c: v.$3, w: FontWeight.w700)),
           const SizedBox(height: 3),
-          Text('Les logements comparables se louent entre ${fcfa(n(m['low']))} et ${fcfa(n(m['high']))} FCFA par mois '
-              '(d’après ${n(m['comparables'])} annonces).', style: J.sans(12.5, c: J.clay600, w: FontWeight.w400, h: 1.4)),
+          Text(tr(context, 'dt.range').replaceAll('{a}', fcfa(n(m['low']))).replaceAll('{b}', fcfa(n(m['high']))).replaceAll('{n}', '${n(m['comparables'])}'), style: J.sans(12.5, c: J.clay600, w: FontWeight.w400, h: 1.4)),
         ])),
       ]),
     );
   }
 
   Widget _similaires() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('LOGEMENTS SIMILAIRES', style: J.mono(10)),
+        Text(tr(context, 'dt.similar'), style: J.mono(10)),
         const SizedBox(height: 10),
         SizedBox(
           height: 222,
@@ -138,16 +199,25 @@ class _DetailScreenState extends State<DetailScreen> {
           backgroundColor: J.cream,
           surfaceTintColor: Colors.transparent,
           leading: Padding(padding: const EdgeInsets.all(6), child: _circle(Icons.arrow_back_rounded, () => Navigator.pop(context))),
-          actions: [Padding(padding: const EdgeInsets.only(right: 12), child: HeartButton(p.id, size: 44))],
+          actions: [
+            Padding(padding: const EdgeInsets.only(right: 8),
+                child: Semantics(button: true, label: s.t('share.t'),
+                    child: _circle(Icons.share_outlined, () => partagerAnnonce(context, p)))),
+            // Signaler une annonce douteuse (conseils de sécurité, n° 7)
+            Padding(padding: const EdgeInsets.only(right: 8),
+                child: Semantics(button: true, label: s.t('rep.t'),
+                    child: _circle(Icons.flag_outlined, () => _signaler(s)))),
+            Padding(padding: const EdgeInsets.only(right: 12), child: HeartButton(p.id, size: 44)),
+          ],
           flexibleSpace: FlexibleSpaceBar(
             stretchModes: const [StretchMode.zoomBackground],
             background: Hero(
               tag: 'photo-${p.id}',
               child: carrousel
                   ? Container(
-                      color: J.ink,
+                      color: J.night,
                       padding: EdgeInsets.fromLTRB(0, MediaQuery.of(context).padding.top + 62, 0, 18),
-                      child: CoverflowGallery(count: p.photoCount, photo: (_, i) => PropertyPhoto(p, index: i)),
+                      child: CoverflowGallery(count: p.photoCount, autoplay: !s.lowData, photo: (_, i) => PropertyPhoto(p, index: i)),
                     )
                   : Stack(fit: StackFit.expand, children: [
                 PageView.builder(
@@ -185,6 +255,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(width: 8),
               Text(s.t(canRent ? 'avail' : 'notAvail'), style: J.sans(13, c: canRent ? J.leaf : J.terracotta, w: FontWeight.w600)),
             ])),
+            if (p.approved || p.ownerVerified) ...[const SizedBox(height: 12), BadgesVerif(p)],
             const SizedBox(height: 20),
             Entrance(delayMs: 180, child: Row(children: [
               _stat('${p.bedrooms > 0 ? p.bedrooms : '—'}', s.t('beds')),
@@ -193,6 +264,22 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(width: 8),
               _stat('${p.area}', 'M²'),
             ])),
+            // Économie de données : les photos ne se chargent qu'à la demande
+            if (!s.photosVisibles(p.id) && p.images.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Pressable(
+                onTap: () => s.afficherPhotos(p.id),
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: J.line, width: 1.5)),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.image_outlined, size: 20, color: J.ink),
+                    const SizedBox(width: 8),
+                    Text('${s.t('photo.show')} (${p.images.length})', style: J.sans(14, w: FontWeight.w700)),
+                  ]),
+                ),
+              ),
+            ],
             if (marche != null) ...[const SizedBox(height: 16), _marche(marche!)],
             const SizedBox(height: 20),
             Entrance(delayMs: 220, child: Text(p.description, style: J.sans(15, c: J.clay600, w: FontWeight.w400, h: 1.6))),
@@ -218,14 +305,30 @@ class _DetailScreenState extends State<DetailScreen> {
               ]),
               const SizedBox(height: 22),
             ],
+            // Emplacement : seulement si le propriétaire a posé la position GPS
+            if (p.aPosition) ...[
+              LocationCard(p, avecCarte: !s.lowData),
+              const SizedBox(height: 22),
+              Alentours(p),
+              const SizedBox(height: 22),
+            ],
             Entrance(delayMs: 320, child: _ownerCard(s, p)),
+            // Visite sur place : proposée ici, confirmée par le propriétaire
+            if (s.user?.role != 'owner' && s.user?.id != p.ownerId && canRent) ...[
+              const SizedBox(height: 12),
+              PillButton(
+                label: s.t('visit.plan'), height: 52, bg: Colors.transparent, fg: J.ink, border: J.ink,
+                icon: Icon(Icons.event_available_rounded, size: 20, color: J.ink),
+                onTap: () => planifierVisite(context, p),
+              ),
+            ],
             if (similaires.isNotEmpty) ...[const SizedBox(height: 28), _similaires()],
           ]),
         ),
       ]),
       bottomSheet: Container(
         padding: EdgeInsets.fromLTRB(20, 14, 20, 14 + MediaQuery.of(context).padding.bottom),
-        decoration: const BoxDecoration(color: J.cream, border: Border(top: BorderSide(color: J.line))),
+        decoration: BoxDecoration(color: J.cream, border: Border(top: BorderSide(color: J.line))),
         child: Row(children: [
           Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${fcfa(p.price)} FCFA', style: J.serif(21)),
@@ -244,7 +347,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _circle(IconData i, VoidCallback f) => Pressable(
         onTap: f,
-        child: Container(decoration: const BoxDecoration(color: J.cream, shape: BoxShape.circle), child: Icon(i, color: J.ink)),
+        child: Container(decoration: BoxDecoration(color: J.cream, shape: BoxShape.circle), child: Icon(i, color: J.ink)),
       );
 
   Widget _stat(String v, String l) => Expanded(
@@ -283,10 +386,10 @@ class _DetailScreenState extends State<DetailScreen> {
           Row(children: [
             if (phone.isNotEmpty)
               Expanded(child: PillButton(label: s.t('call'), height: 46, bg: Colors.transparent, border: J.clay600,
-                  icon: const Icon(Icons.call_rounded, size: 18, color: J.cream), onTap: () => launchUrl(Uri.parse('tel:$phone')))),
+                  icon: Icon(Icons.call_rounded, size: 18, color: J.cream), onTap: () => launchUrl(Uri.parse('tel:$phone')))),
             if (phone.isNotEmpty && numeroWhatsApp(p.ownerWhatsapp) != null) const SizedBox(width: 8),
             if (numeroWhatsApp(p.ownerWhatsapp) != null)
-              Expanded(child: PillButton(label: 'WhatsApp', height: 46, bg: J.leaf,
+              Expanded(child: PillButton(label: 'WhatsApp', height: 46, bg: J.leaf, fg: Colors.white,
                   onTap: () => launchUrl(
                     Uri.parse('https://wa.me/${numeroWhatsApp(p.ownerWhatsapp)}'
                         '?text=${Uri.encodeComponent('Bonjour ${p.ownerName.split(' ').first}, '

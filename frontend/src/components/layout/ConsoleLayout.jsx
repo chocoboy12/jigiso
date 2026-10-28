@@ -29,6 +29,7 @@ const NAV = {
     { to: '/admin/statistiques',   label: 'Statistiques', icon: 'stats' },
     { to: '/admin/signalements',   label: 'Signalements', icon: 'flag', badge: 'reports' },
     { to: '/admin/verifications',  label: 'Identités',    icon: 'id-badge', badge: 'kyc' },
+    { to: '/admin/lieux',          label: 'Lieux signalés', icon: 'marker' },
     { to: '/admin/utilisateurs',   label: 'Comptes',      icon: 'users-alt' },
     { to: '/admin/application',    label: 'Application mobile', icon: 'mobile-notch' },
     { to: '/profil',               label: 'Profil',       icon: 'user' },

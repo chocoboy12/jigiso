@@ -28,6 +28,24 @@ class Place {
   const Place.region(this.region) : kind = 'region', commune = null, quartier = null, lat = null, lng = null;
   const Place.gps(this.lat, this.lng) : kind = 'gps', commune = null, quartier = null, region = null;
 
+  Map<String, dynamic> toJson() => {'kind': kind, 'commune': commune, 'quartier': quartier, 'region': region, 'lat': lat, 'lng': lng};
+  static Place fromJson(Map pl) => switch (pl['kind']) {
+        'commune' => Place.commune(pl['commune'] as String?),
+        'quartier' => Place.quartier(pl['commune'] as String?, pl['quartier'] as String?),
+        'region' => Place.region(pl['region'] as String?),
+        'gps' => Place.gps((pl['lat'] as num?)?.toDouble(), (pl['lng'] as num?)?.toDouble()),
+        _ => const Place.bamako(),
+      };
+
+  /// Libellé dans la langue choisie ([t] : AppState.t)
+  String labelT(String Function(String) t) => switch (kind) {
+        'commune' => t('pl.commune').replaceAll('{c}', '$commune'),
+        'quartier' => '$quartier · ${t('lp.commune').replaceAll('{n}', '$commune')}',
+        'region' => t('pl.region').replaceAll('{r}', '$region'),
+        'gps' => t('pl.gps'),
+        _ => t('pl.bamako'),
+      };
+
   String get label => switch (kind) {
         'commune' => 'Bamako · Commune $commune',
         'quartier' => '$quartier · Commune $commune',

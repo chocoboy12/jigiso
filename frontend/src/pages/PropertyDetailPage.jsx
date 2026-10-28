@@ -15,6 +15,7 @@ import {
   PROPERTY_TYPES, AMENITIES, STATUS_LABELS, timeAgo
 } from '../utils/helpers';
 import ReviewSection from '../components/property/ReviewSection';
+import Alentours from '../components/map/Alentours';
 import PropertyMap from '../components/map/PropertyMap';
 import Icon from '../components/common/Icon';
 import MaliFlag from '../components/common/MaliFlag';
@@ -566,7 +567,8 @@ export default function PropertyDetailPage() {
                 {property.neighborhood}, {property.city}
                 {property.address ? ` · ${property.address}` : ''}
               </p>
-              <PropertyMap location={property.location} />
+              <PropertyMap location={property.location} approx={property.positionApprochee} />
+              <Alentours propertyId={property._id} />
             </div>
           )}
 

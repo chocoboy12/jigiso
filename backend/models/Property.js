@@ -59,6 +59,19 @@ const propertySchema = new mongoose.Schema({
     lat: { type: Number, min: 10, max: 25.5 },
     lng: { type: Number, min: -12.5, max: 4.5 },
   },
+  /**
+   * Ce que le public voit de l'emplacement. Par défaut, un point décalé de
+   * 150 à 400 m (services/privacy.js) : le quartier, pas la porte. Le
+   * propriétaire peut choisir d'afficher le point exact ; un locataire dont
+   * la visite est confirmée le reçoit aussi (middleware/positions.js).
+   * La recherche autour d'un point porte sur le point approximatif : on ne
+   * peut pas retrouver l'adresse en multipliant les recherches.
+   */
+  locationPrecision: { type: String, enum: ['approx', 'exact'], default: 'approx' },
+  locationApprox: {
+    lat: { type: Number },
+    lng: { type: Number },
+  },
   bedrooms: {
     type: Number,
     default: 0,
@@ -95,7 +108,13 @@ const propertySchema = new mongoose.Schema({
     isMain: { type: Boolean, default: false },
     // Empreinte du fichier : repère une même photo réutilisée dans une autre annonce
     hash: { type: String, select: false },
+    // Empreintes visuelles (dHash 64 bits, et de l'image en miroir) : repèrent
+    // aussi une photo redimensionnée, recompressée ou légèrement recadrée
+    phash: { type: String, select: false },
+    phashMiroir: { type: String, select: false },
   }],
+  /** Loyer au moment de la dernière validation : un changement brutal ensuite est signalé */
+  approvedPrice: { type: Number, select: false },
 
   /* ── Score de risque (modération) ────────────────────────
      Calculé par services/risk.js à la publication. Visible de l'admin
@@ -109,6 +128,8 @@ const propertySchema = new mongoose.Schema({
       features:   { type: mongoose.Schema.Types.Mixed },
       label:      { type: Number, enum: [0, 1] },
       computedAt: { type: Date },
+      /** Annonces liées à un signal (photo, doublon, même lieu) : l'admin compare côte à côte */
+      matches:    { type: [{ property: mongoose.Schema.Types.ObjectId, title: String, motif: String }], default: [] },
     }, { _id: false }),
     select: false,
     default: undefined,
@@ -204,6 +225,9 @@ const propertySchema = new mongoose.Schema({
   /* ── Modération ──────────────────────────────────────────
      Renseignés uniquement par les endpoints d'administration. */
   moderatedAt: { type: Date },
+  /* Date de la PREMIÈRE validation : une annonce modifiée puis revalidée
+     n'est pas « nouvelle » — les alertes ne repartent pas. */
+  publishedAt: { type: Date },
   moderatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
   /* ── Anti-fraude ─────────────────────────────────────────

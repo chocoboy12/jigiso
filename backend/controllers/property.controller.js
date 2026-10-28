@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Property = require('../models/Property');
 const Favorite = require('../models/Favorite');
 const User = require('../models/User');
@@ -8,9 +9,13 @@ const emailService = require('../services/email.service');
 const { deleteImage, publicUrl } = require('../config/cloudinary');
 const { pick } = require('../middleware/guard');
 const Interaction = require('../models/Interaction');
+const Visit = require('../models/Visit');
+const RentalRequest = require('../models/RentalRequest');
 const recommender = require('../services/recommender');
 const pricing = require('../services/pricing');
 const risk = require('../services/risk');
+const { approcher } = require('../services/privacy');
+const alentours = require('../services/alentours');
 const { quartiersDeLaCommune } = require('../data/bamako');
 
 /* Un nom de quartier peut contenir un tiret ou une apostrophe : sans échappement,
@@ -91,7 +96,7 @@ const parseLocation = (raw) => {
 
 const EDITABLE_PROPERTY_FIELDS = [
   'title', 'description', 'type', 'price', 'pricePeriod',
-  'city', 'neighborhood', 'address', 'location',
+  'city', 'neighborhood', 'address', 'location', 'locationPrecision',
   'bedrooms', 'bathrooms', 'area', 'furnished', 'amenities',
   'availability',
 ];
@@ -244,8 +249,9 @@ exports.getProperties = async (req, res) => {
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
         const dLat = rayonKm / 111;
         const dLng = rayonKm / (111 * Math.max(Math.cos(latitude * Math.PI / 180), 0.01));
-        filter['location.lat'] = { $gte: latitude - dLat, $lte: latitude + dLat };
-        filter['location.lng'] = { $gte: longitude - dLng, $lte: longitude + dLng };
+        // Point approximatif : la recherche ne doit pas permettre de retrouver l'adresse
+        filter['locationApprox.lat'] = { $gte: latitude - dLat, $lte: latitude + dLat };
+        filter['locationApprox.lng'] = { $gte: longitude - dLng, $lte: longitude + dLng };
       }
     }
 
@@ -322,7 +328,17 @@ exports.getProperty = async (req, res) => {
       const fav = await Favorite.findOne({ user: req.user._id, property: property._id });
       isFavorite = !!fav;
     }
-    res.json({ success: true, property, isFavorite });
+    /* Adresse exacte pour qui en a besoin : visite confirmée ou demande de
+       location acceptée. Sinon, le filtre de sortie publie le point approché. */
+    const reponse = property.toObject();
+    if (req.user && reponse.location?.lat) {
+      const [visite, demande] = await Promise.all([
+        Visit.exists({ tenant: req.user._id, property: property._id, status: 'confirmee' }),
+        RentalRequest.exists({ tenant: req.user._id, property: property._id, status: 'accepted' }),
+      ]);
+      if (visite || demande) reponse._positionExacte = true;
+    }
+    res.json({ success: true, property: reponse, isFavorite });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });
   }
@@ -330,7 +346,7 @@ exports.getProperty = async (req, res) => {
 
 exports.createProperty = async (req, res) => {
   try {
-    const { title, description, type, price, pricePeriod, city, neighborhood, address, bedrooms, bathrooms, area, furnished, amenities, location, contract } = req.body;
+    const { title, description, type, price, pricePeriod, city, neighborhood, address, bedrooms, bathrooms, area, furnished, amenities, location, contract, locationPrecision } = req.body;
 
     /* Les conditions de location sont exigées à la publication, pas plus tard.
        Un locataire qui écrit au propriétaire doit déjà savoir ce qu'on lui
@@ -355,11 +371,14 @@ exports.createProperty = async (req, res) => {
         hash: file.path && !/^https?:/.test(file.path) ? await risk.empreinteFichier(file.path) : undefined,
       });
     }
+    const _id = new mongoose.Types.ObjectId();
+    const point = parseLocation(location);
     const property = await Property.create({
+      _id, locationApprox: approcher(point, _id), locationPrecision: locationPrecision === 'exact' ? 'exact' : 'approx',
       title, description, type, price: parseInt(price), pricePeriod: pricePeriod || 'mois',
       city, neighborhood, address, bedrooms: parseInt(bedrooms) || 0, bathrooms: parseInt(bathrooms) || 0,
       area: parseInt(area) || 0, furnished: furnished === 'true' || furnished === true,
-      amenities: amenities ? JSON.parse(amenities) : {}, location: parseLocation(location),
+      amenities: amenities ? JSON.parse(amenities) : {}, location: point,
       images, owner: req.user._id, status: 'pending', contract: conditions,
     });
 
@@ -398,8 +417,11 @@ exports.updateProperty = async (req, res) => {
 
     if ('location' in updateData) {
       const loc = parseLocation(updateData.location);
-      if (loc) updateData.location = loc;
+      if (loc) { updateData.location = loc; updateData.locationApprox = approcher(loc, property._id); }
       else delete updateData.location;   // point invalide : on ne touche pas à l'existant
+    }
+    if ('locationPrecision' in updateData && !['approx', 'exact'].includes(updateData.locationPrecision)) {
+      delete updateData.locationPrecision;
     }
     if (updateData.amenities && typeof updateData.amenities === 'string') {
       try { updateData.amenities = JSON.parse(updateData.amenities); }
@@ -508,6 +530,23 @@ exports.getPriceInsight = async (req, res) => {
     if (p.pricePeriod !== 'mois') return res.json({ success: true, insight: { available: false } });
     const est = await pricing.estimer(p, p._id);
     res.json({ success: true, insight: { ...est, verdict: pricing.situer(p.price, est), price: p.price } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Erreur serveur.' });
+  }
+};
+
+/**
+ * GET /api/properties/:id/alentours — écoles, marchés, santé, transports…
+ * à moins d'un kilomètre (OpenStreetMap), autour du point approximatif.
+ * Peut répondre { statut: 'enCours' } : l'app redemande quelques secondes plus tard.
+ */
+exports.getAlentours = async (req, res) => {
+  try {
+    const p = await Property.findOne({ _id: req.params.id, isActive: true }, 'location locationApprox').lean();
+    if (!p) return res.status(404).json({ success: false, message: 'Logement introuvable.' });
+    if (!p.location?.lat) return res.json({ success: true, statut: 'sansPosition' });
+    const r = await alentours.obtenir(p.locationApprox?.lat ? p.locationApprox : approcher(p.location, p._id));
+    res.json({ success: true, ...r });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Erreur serveur.' });
   }

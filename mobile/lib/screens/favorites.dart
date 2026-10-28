@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../data/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/property_card.dart';
@@ -10,7 +9,8 @@ class FavoritesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    final list = s.favorites.map(s.byId).whereType<Property>().toList();
+    // Favoris du compte (ou du téléphone pour un invité), quelle que soit la ville affichée
+    final list = s.listeFavoris;
     return SafeArea(
       bottom: false,
       child: ListView(padding: const EdgeInsets.fromLTRB(20, 24, 20, 120), children: [
@@ -35,7 +35,7 @@ class FavoritesScreen extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 24),
                   decoration: BoxDecoration(color: J.terracotta, borderRadius: BorderRadius.circular(16)),
-                  child: const Icon(Icons.delete_outline_rounded, color: J.cream),
+                  child: Icon(Icons.delete_outline_rounded, color: J.cream),
                 ),
                 onDismissed: (_) {
                   final id = list[i].id;

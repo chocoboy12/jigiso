@@ -12,7 +12,9 @@ class CoverflowGallery extends StatefulWidget {
   final int count;
   final Widget Function(BuildContext, int) photo;
   final Duration interval;
-  const CoverflowGallery({super.key, required this.count, required this.photo, this.interval = const Duration(seconds: 5)});
+  /// Défilement automatique (coupé en mode économie de données)
+  final bool autoplay;
+  const CoverflowGallery({super.key, required this.count, required this.photo, this.interval = const Duration(seconds: 5), this.autoplay = true});
 
   @override
   State<CoverflowGallery> createState() => _CoverflowGalleryState();
@@ -31,7 +33,7 @@ class _CoverflowGalleryState extends State<CoverflowGallery> {
 
   void _relancer() {
     _auto?.cancel();
-    if (widget.count < 2) return;
+    if (widget.count < 2 || !widget.autoplay) return;
     _auto = Timer.periodic(widget.interval, (_) {
       if (!mounted || !ctrl.hasClients) return;
       final suivant = (actif + 1) % widget.count;

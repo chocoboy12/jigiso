@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import AnimatedText from '../components/common/AnimatedText';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { propertyAPI, cityAPI, alertAPI } from '../services/api';
 import PropertyCard from '../components/property/PropertyCard';
 import Icon from '../components/common/Icon';
@@ -11,6 +11,8 @@ import { useT } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
 import { useRetourOnglet } from '../hooks/useRetourOnglet';
 import { useSeo } from '../hooks/useSeo';
+import ResultsMap from '../components/map/ResultsMap';
+import { distanceKm, formatDistance, maPosition } from '../utils/geo';
 
 /* Plafond du curseur de budget : au-delà, on ne filtre plus sur le prix */
 const BUDGET_MAX = 800000;
@@ -30,6 +32,21 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const navigate = useNavigate();
+
+  /* Vue liste / carte, et « Près de moi » : position du navigateur, utilisée
+     seulement ici pour calculer les distances (jamais envoyée au serveur). */
+  const [vue, setVue] = useState('liste');
+  const [origine, setOrigine] = useState(null);
+  const [localisation, setLocalisation] = useState(false);
+  const basculerPresDeMoi = async () => {
+    if (origine) return setOrigine(null);
+    setLocalisation(true);
+    try { setOrigine(await maPosition()); }
+    catch (e) { toast.error(t(e.message)); }
+    finally { setLocalisation(false); }
+  };
+  const distanceDe = (p) => (origine && p.location?.lat ? distanceKm(origine, p.location) : null);
 
   const villeSeo = searchParams.get('city');
   useSeo({
@@ -299,9 +316,40 @@ export default function SearchPage() {
             </div>
           ) : properties.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                {properties.map(p => <PropertyCard key={p._id} property={p} />)}
+              {/* Liste / Carte, et distances depuis la position de la personne */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div className="inline-flex rounded-pill border border-ink/15 p-1" role="tablist">
+                  {[['liste', 'apps', t('Liste')], ['carte', 'map-marker', t('Carte')]].map(([v, icone, libelle]) => (
+                    <button key={v} type="button" role="tab" aria-selected={vue === v} onClick={() => setVue(v)}
+                      className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-pill text-[13.5px] font-semibold transition-colors ${
+                        vue === v ? 'bg-ink text-cream' : 'text-clay-600 hover:text-ink'}`}>
+                      <Icon name={icone} size={13} /> {libelle}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={basculerPresDeMoi} disabled={localisation}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-pill border text-[13.5px] font-semibold transition-colors ${
+                    origine ? 'bg-river text-white border-river' : 'border-ink/15 text-clay-600 hover:border-ink/40'}`}>
+                  <Icon name="location-crosshairs" size={13} />
+                  {localisation ? t('Localisation…') : origine ? t('Près de moi · activé') : t('Près de moi')}
+                </button>
               </div>
+
+              {vue === 'carte' ? (
+                <ResultsMap properties={properties} origine={origine} onOpen={(id) => navigate(`/logements/${id}`)} />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {/* Avec « Près de moi », les plus proches d'abord (sans position : en fin de liste) */}
+                  {(origine
+                    ? [...properties].sort((a, b) => (distanceDe(a) ?? Infinity) - (distanceDe(b) ?? Infinity))
+                    : properties
+                  ).map(p => {
+                    const d = distanceDe(p);
+                    return <PropertyCard key={p._id} property={p}
+                      distance={d != null ? `${formatDistance(d)} ${t('de vous')}` : undefined} />;
+                  })}
+                </div>
+              )}
 
               {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-2 mt-12">

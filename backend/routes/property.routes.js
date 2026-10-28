@@ -3,7 +3,7 @@ const router = express.Router();
 const {
   getProperties, getProperty, createProperty,
   updateProperty, deleteProperty, getMyProperties, getStats,
-  getSimilar, getPriceInsight,
+  getSimilar, getPriceInsight, getAlentours,
 } = require('../controllers/property.controller');
 const { protect, authorize, optionalAuth } = require('../middleware/auth');
 const { requireVerifiedOwner, rejectProtectedFields, PROTECTED_PROPERTY_FIELDS } = require('../middleware/guard');
@@ -16,6 +16,7 @@ router.get('/my-properties', protect, authorize('owner', 'admin'), getMyProperti
 router.get('/:id', optionalAuth, getProperty);
 router.get('/:id/similar', optionalAuth, getSimilar);
 router.get('/:id/price-insight', getPriceInsight);
+router.get('/:id/alentours', getAlentours);
 
 /**
  * Publier exige un propriétaire entièrement vérifié (e-mail + téléphone +

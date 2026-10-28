@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
+const compression = require('compression');
 const helmet = require('helmet');
 const path = require('path');
 require('dotenv').config();
@@ -56,11 +57,21 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 
+/* Réponses compressées (gzip) : 3 à 10 fois moins de données sur le réseau
+   mobile. Sauf le flux de l'assistant (SSE), que la compression retiendrait
+   au lieu de l'envoyer mot à mot. */
+app.use(compression({
+  threshold: 1024,
+  filter: (req, res) => !req.path.endsWith('/chat/stream') && compression.filter(req, res),
+}));
+
 app.use(express.json({ limit: '1mb' }));            // 10 Mo était inutilement large
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.use('/api', apiLimiter);
+// Adresse exacte des logements : jamais exposée sans raison (voir middleware/positions.js)
+app.use('/api', require('./middleware/positions'));
 
 /* ── Fichiers téléversés ─────────────────────────────────────
    Les images d'annonces sont publiques mais ne doivent jamais être
@@ -92,6 +103,8 @@ app.use('/api/feedback',        require('./routes/feedback.routes'));
 app.use('/api/users',           require('./routes/user.routes'));
 app.use('/api/favorites',       require('./routes/favorite.routes'));
 app.use('/api/rental-requests', require('./routes/rental.routes'));
+app.use('/api/visits',          require('./routes/visit.routes'));
+app.use('/api/lieux',           require('./routes/lieu.routes'));
 app.use('/api/messages',        require('./routes/message.routes'));
 app.use('/api/reports',         require('./routes/report.routes'));
 app.use('/api/admin',           require('./routes/admin.routes'));
@@ -102,8 +115,16 @@ app.use('/api/ai',              require('./routes/ai.routes'));
 app.use('/api/reviews',         require('./routes/review.routes'));
 app.use('/api/alerts',          require('./routes/alert.routes'));
 
+/* Santé du service : l'hébergeur (Render, Cloud Run) s'en sert pour savoir si
+   l'API répond. On y vérifie aussi la base : une API sans base n'est pas saine. */
 app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'JIGISO API' });
+  const base = mongoose.connection.readyState === 1;
+  res.status(base ? 200 : 503).json({
+    success: base,
+    message: 'JIGISO API',
+    base: base ? 'connectée' : 'indisponible',
+    uptime: Math.round(process.uptime()),
+  });
 });
 
 app.use('*', (req, res) => {
@@ -141,14 +162,35 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-mongoose.connect(MONGO)
+mongoose.connect(MONGO, {
+  maxPoolSize: 20,                  // requêtes en parallèle sans attendre une connexion libre
+  serverSelectionTimeoutMS: 10000,  // échec clair plutôt qu'une attente indéfinie
+})
   .then(() => {
     console.log('[ok] MongoDB connecté');
     // Signale tout de suite si les e-mails ne peuvent pas partir
     require('./services/email.service').verifyConnection().catch(() => {});
-    app.listen(PORT, () => {
+    // Rappels de visite (la veille, puis deux heures avant)
+    require('./services/visitReminders').demarrer();
+    // Lieux à proximité : import OpenStreetMap des zones où il y a des logements
+    require('./services/alentours').demarrer();
+    const server = app.listen(PORT, () => {
       console.log(`[ok] API sur http://localhost:${PORT}/api/health`);
     });
+    /* Connexions gardées ouvertes un peu plus longtemps que celles des
+       hébergeurs (60 s) : l'app réutilise la même connexion entre deux
+       requêtes au lieu d'en rouvrir une — gros gain sur un réseau 3G. */
+    server.keepAliveTimeout = 65 * 1000;
+    server.headersTimeout = 66 * 1000;
+
+    /* Arrêt propre (redéploiement) : on finit les requêtes en cours avant de couper. */
+    const arreter = (signal) => {
+      console.log(`[arrêt] ${signal} reçu, fin des requêtes en cours…`);
+      server.close(() => mongoose.disconnect().finally(() => process.exit(0)));
+      setTimeout(() => process.exit(0), 10000).unref();
+    };
+    process.on('SIGTERM', arreter);
+    process.on('SIGINT', arreter);
   })
   .catch(err => {
     console.error('[fatal]', err.message);

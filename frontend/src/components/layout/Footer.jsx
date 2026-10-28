@@ -111,17 +111,11 @@ export default function Footer() {
           </div>
           <button onClick={openFeedback}
             className="font-mono text-2xs tracking-label uppercase text-clay-500 flex items-center gap-2
-                       hover:text-gold transition-colors">
+                       md:mr-44 hover:text-gold transition-colors">
             <Icon name="comment-alt" size={11} />
             {t('Donner mon avis')}
           </button>
 
-          <Link to="/credits-photos"
-            className="font-mono text-2xs tracking-label uppercase text-clay-500 flex items-center gap-2
-                       md:mr-44 hover:text-gold transition-colors">
-            <Icon name="camera" size={11} />
-            {t('Crédits photo')}
-          </Link>
         </div>
       </div>
     </footer>

@@ -14,6 +14,18 @@ class Property {
   final Map<String, bool> amenities;
   final List<String> images;
   final List<String> photoLabels;
+  /// Position GPS posée par le propriétaire à la publication ; null si absente.
+  final double? lat, lng;
+  bool get aPosition => lat != null && lng != null;
+  /// Vrai si [lat]/[lng] sont le point approché (décalé de 150 à 400 m) envoyé
+  /// par le serveur : le quartier, pas l'adresse. Faux pour le propriétaire,
+  /// un locataire dont la visite est confirmée, ou si l'adresse exacte est publique.
+  final bool positionApprochee;
+  /// Date de publication (première validation), à défaut de création.
+  final DateTime? createdAt;
+  /// Propriétaire dont l'identité a été vérifiée par l'équipe JIGISO
+  /// (calculé par le serveur : e-mail confirmé + pièce d'identité validée).
+  final bool ownerVerified;
 
   const Property({
     required this.id, required this.title, required this.type, required this.city, required this.neighborhood,
@@ -21,9 +33,27 @@ class Property {
     this.ownerPhone = '', this.ownerWhatsapp = '', this.bedrooms = 0, this.bathrooms = 0, this.area = 0, this.views = 0, this.status = 'approved', this.furnished = false,
     this.availability = true, this.approved = true, this.rating = 0, this.reservedUntil,
     this.amenities = const {}, this.images = const [], this.photoLabels = const [],
+    this.lat, this.lng, this.positionApprochee = false, this.createdAt, this.ownerVerified = false,
   });
 
   bool get reserved => reservedUntil != null && reservedUntil!.isAfter(DateTime.now());
+
+  /// Copie au format de l'API, pour garder une annonce sur le téléphone
+  /// (« récemment vus », favoris hors connexion). Relue par [Property.fromJson]
+  /// avec un résolveur identité : les URL d'images sont déjà absolues.
+  Map<String, dynamic> toJson() => {
+        '_id': id, 'title': title, 'type': type, 'city': city, 'neighborhood': neighborhood,
+        'price': price, 'pricePeriod': pricePeriod, 'description': description,
+        'owner': {'_id': ownerId, 'name': ownerName, 'isVerified': ownerVerified},
+        'bedrooms': bedrooms, 'bathrooms': bathrooms, 'area': area, 'views': views,
+        'status': status, 'furnished': furnished, 'availability': availability, 'rating': rating,
+        if (reservedUntil != null) 'reservation': {'until': reservedUntil!.toIso8601String()},
+        'amenities': amenities,
+        'images': [for (var i = 0; i < images.length; i++) {'url': images[i], 'isMain': i == 0}],
+        if (aPosition) 'location': {'lat': lat, 'lng': lng},
+        'positionApprochee': positionApprochee,
+        if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      };
   int get photoCount => images.isNotEmpty ? images.length : (photoLabels.isEmpty ? 1 : photoLabels.length);
 
   factory Property.fromJson(Map<String, dynamic> j, String Function(String) resolve) {
@@ -57,6 +87,13 @@ class Property {
       reservedUntil: res != null ? DateTime.tryParse('$res') : null,
       amenities: ((j['amenities'] as Map?) ?? {}).map((k, v) => MapEntry('$k', v == true)),
       images: imgs.map((e) => resolve('${e['url'] ?? ''}')).where((u) => u.isNotEmpty).toList(),
+      lat: (j['location'] is Map ? (j['location']['lat'] as num?) : null)?.toDouble(),
+      lng: (j['location'] is Map ? (j['location']['lng'] as num?) : null)?.toDouble(),
+      positionApprochee: j['positionApprochee'] == true,
+      createdAt: DateTime.tryParse('${j['publishedAt'] ?? j['createdAt'] ?? ''}'),
+      // Liste : `isVerified` déjà calculé ; détail : on applique la même règle
+      ownerVerified: owner is Map && (owner['isVerified'] == true
+          || (owner['emailVerified'] == true && owner['ownerVerification']?['status'] == 'approved')),
     );
   }
 }
@@ -157,6 +194,74 @@ class RentalRequest {
   final String duration, message;
   String status; // pending | accepted | rejected | cancelled
   RentalRequest({required this.property, required this.moveIn, required this.duration, this.message = '', this.status = 'pending'});
+
+  /// Depuis GET /rental-requests (côté locataire)
+  factory RentalRequest.fromJson(Map<String, dynamic> j, String Function(String) resolve) {
+    final prop = Map<String, dynamic>.from((j['property'] as Map?) ?? {'_id': '', 'title': 'Annonce retirée'});
+    prop['owner'] ??= j['owner'];   // nom du propriétaire, affiché sur la carte
+    return RentalRequest(
+      property: Property.fromJson(prop, resolve),
+      moveIn: DateTime.tryParse('${j['moveInDate']}') ?? DateTime.now(),
+      duration: '${j['duration'] ?? ''}',
+      message: '${j['message'] ?? ''}',
+      status: '${j['status'] ?? 'pending'}',
+    );
+  }
+}
+
+/// Visite d'un logement (GET /visits)
+/// Visite d'un logement. Les heures sont gardées en UTC = heure de Bamako
+/// (GMT toute l'année) : un rendez-vous au Mali s'affiche à l'heure malienne,
+/// même sur un téléphone réglé sur un autre fuseau.
+class Visite {
+  final String id, statut, role; // statut : proposee|confirmee|refusee|contreproposee|annulee ; role : locataire|proprietaire
+  final DateTime date;
+  final DateTime? dateAlternative;   // autre horaire proposé par le propriétaire
+  final int duree;                   // minutes
+  final String note, reponse, annuleePar, autreNom, autreTel;
+  final Property? property;
+  const Visite({required this.id, required this.statut, required this.role, required this.date, this.dateAlternative,
+      this.duree = 60, this.note = '', this.reponse = '', this.annuleePar = '', this.autreNom = '', this.autreTel = '', this.property});
+
+  /// Horaire en jeu : l'autre horaire tant qu'il attend une réponse
+  DateTime get quand => statut == 'contreproposee' && dateAlternative != null ? dateAlternative! : date;
+  bool get aVenir => quand.isAfter(DateTime.now());
+  bool get active => statut == 'proposee' || statut == 'confirmee' || statut == 'contreproposee';
+
+  factory Visite.fromJson(Map<String, dynamic> j, String Function(String) resolve) {
+    final role = '${j['role'] ?? 'locataire'}';
+    final autre = (role == 'proprietaire' ? j['tenant'] : j['owner']) as Map?;
+    return Visite(
+      id: '${j['_id']}', statut: '${j['status']}', role: role,
+      date: (DateTime.tryParse('${j['date']}') ?? DateTime.now()).toUtc(),
+      dateAlternative: DateTime.tryParse('${j['dateAlternative']}')?.toUtc(),
+      duree: (j['duree'] as num?)?.toInt() ?? 60,
+      note: '${j['note'] ?? ''}', reponse: '${j['reponse'] ?? ''}', annuleePar: '${j['annuleePar'] ?? ''}',
+      autreNom: '${autre?['name'] ?? ''}', autreTel: '${autre?['phone'] ?? ''}',
+      property: j['property'] is Map ? Property.fromJson(Map<String, dynamic>.from(j['property']), resolve) : null,
+    );
+  }
+}
+
+/// Disponibilités d'un propriétaire pour les visites (heures de Bamako)
+class Disponibilites {
+  final bool configure;
+  final Set<int> jours;          // 0 = dimanche … 6 = samedi
+  final int debut, fin, duree;
+  final List<String> joursBloques;   // 'AAAA-MM-JJ'
+  const Disponibilites({this.configure = false, this.jours = const {1, 2, 3, 4, 5, 6}, this.debut = 9, this.fin = 18,
+      this.duree = 60, this.joursBloques = const []});
+
+  factory Disponibilites.fromJson(Map<String, dynamic> j) => Disponibilites(
+        configure: j['configure'] == true,
+        jours: ((j['jours'] as List?) ?? const [1, 2, 3, 4, 5, 6]).map((e) => (e as num).toInt()).toSet(),
+        debut: (j['debut'] as num?)?.toInt() ?? 9,
+        fin: (j['fin'] as num?)?.toInt() ?? 18,
+        duree: (j['duree'] as num?)?.toInt() ?? 60,
+        joursBloques: ((j['joursBloques'] as List?) ?? const []).map((e) => '$e').toList(),
+      );
+  Map<String, dynamic> toJson() =>
+      {'jours': (jours.toList()..sort()), 'debut': debut, 'fin': fin, 'duree': duree, 'joursBloques': joursBloques};
 }
 
 const propertyTypes = ['maison', 'appartement', 'studio', 'chambre', 'villa', 'bureau', 'terrain'];

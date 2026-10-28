@@ -34,6 +34,7 @@ import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminVerificationsPage from './pages/admin/AdminVerificationsPage';
 import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
 import AdminMobilePage from './pages/admin/AdminMobilePage';
+import AdminLieuxPage from './pages/admin/AdminLieuxPage';
 
 const Spinner = () => (
   <div className="flex items-center justify-center min-h-screen">
@@ -138,6 +139,7 @@ function AppRoutes() {
         <Route path="verifications" element={<AdminVerificationsPage />} />
         <Route path="statistiques" element={<AdminAnalyticsPage />} />
         <Route path="application" element={<AdminMobilePage />} />
+        <Route path="lieux" element={<AdminLieuxPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
