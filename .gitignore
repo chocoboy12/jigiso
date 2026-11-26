@@ -77,3 +77,6 @@ Thumbs.db
 
 # Cache de déploiement Firebase
 .firebase/
+
+# Vercel (lien local vers le projet)
+.vercel/

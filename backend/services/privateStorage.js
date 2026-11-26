@@ -18,7 +18,8 @@ const mongoose = require('mongoose');
  */
 const LOCAL_DIR = path.join(__dirname, '..', 'uploads', 'private', 'kyc');
 const BUCKET = process.env.GCS_BUCKET;
-const EN_BASE = process.env.PRIVATE_STORAGE === 'mongo';
+// Sur Vercel le disque est en lecture seule : sans bucket, la base s'impose
+const EN_BASE = process.env.PRIVATE_STORAGE === 'mongo' || (Boolean(process.env.VERCEL) && !BUCKET);
 
 let bucket;
 const gcs = () => {

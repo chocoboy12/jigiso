@@ -1,0 +1,7 @@
+mobile/
+**/node_modules
+backend/uploads/
+backend/.env*
+frontend/.env*
+frontend/dist/
+.claude/

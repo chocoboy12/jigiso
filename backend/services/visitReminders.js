@@ -69,4 +69,5 @@ exports.demarrer = () => {
   minuteur.unref();
 };
 exports.arreter = () => { clearInterval(minuteur); minuteur = null; };
-exports._tour = tour;   // tests
+exports.tour = tour;     // tâche planifiée (Vercel) et tests
+exports._tour = tour;

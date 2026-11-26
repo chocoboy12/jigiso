@@ -391,7 +391,7 @@ exports.mettreAJour = async (propertyId) => {
 exports.apprendreDecision = async (propertyId, refusee) => {
   try {
     await Property.updateOne({ _id: propertyId, risk: { $exists: true } }, { 'risk.label': refusee ? 1 : 0 });
-    exports.entrainer().catch(e => console.error('[risque] entraînement', e.message));
+    require('../utils/enFond')(exports.entrainer().catch(e => console.error('[risque] entraînement', e.message)));
   } catch (e) {
     console.error('[risque] décision', e.message);
   }

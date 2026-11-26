@@ -6,6 +6,7 @@ const Favorite = require('../models/Favorite');
 const { deleteImage } = require('../config/cloudinary');
 const risk = require('../services/risk');
 const alertMatcher = require('../services/alertMatcher');
+const enFond = require('../utils/enFond');
 const recommender = require('../services/recommender');
 const MlModel = require('../models/MlModel');
 
@@ -239,14 +240,14 @@ exports.approvePropertyWithEmail = async (req, res) => {
     }
 
     // Première publication : on prévient les alertes qui correspondent
-    if (premiere) alertMatcher.notifierNouvelleAnnonce(property);
+    if (premiere) enFond(alertMatcher.notifierNouvelleAnnonce(property));
 
     // Loyer validé : un changement brutal ensuite sera signalé à la modération
     await Property.updateOne({ _id: property._id }, { approvedPrice: property.price });
     // Lieux à proximité recherchés dès la validation : la fiche les affiche d'emblée
     if (property.location?.lat) {
-      require('../services/alentours').obtenir(property.locationApprox?.lat ? property.locationApprox
-        : require('../services/privacy').approcher(property.location, property._id)).catch(() => {});
+      enFond(require('../services/alentours').obtenir(property.locationApprox?.lat ? property.locationApprox
+        : require('../services/privacy').approcher(property.location, property._id)).catch(() => {}));
     }
 
     // Chaque décision devient un exemple pour le modèle de risque

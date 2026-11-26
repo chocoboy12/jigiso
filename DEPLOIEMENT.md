@@ -1,13 +1,15 @@
 # Mettre JIGISO en ligne
 
-Deux façons de faire :
+Trois façons de faire :
 
-- **Option A : gratuite, sans carte bancaire** (pour démarrer). Le site est sur
+- **Option V : Vercel** (recommandée). Le site et l'API sont au même endroit,
+  avec votre nom de domaine. Voir la section « Option V » plus bas.
+- **Option A : gratuite, sans carte bancaire**. Le site est sur
   Google (Firebase), l'API sur Render.
-- **Option B : Google Cloud Run** (pour la suite). Tout est chez Google, la
+- **Option B : Google Cloud Run**. Tout est chez Google, la
   facturation doit être activée.
 
-Les étapes 1 et 2 servent aux deux options.
+Les étapes 1 et 2 servent à toutes les options.
 
 ---
 
@@ -31,6 +33,88 @@ Créez un compte sur https://cloudinary.com. Le tableau de bord donne
 
 > Les photos publiées sur votre Mac (`backend/uploads/`) ne sont pas copiées :
 > les annonces de test devront être republiées une fois en ligne.
+
+---
+
+## Option V : Vercel + nom de domaine
+
+Le site (`frontend/`) et l'API (`backend/`) partent ensemble sur Vercel.
+`vercel.json` décrit tout : le site est servi tel quel, et les adresses
+`/api/…`, `/sitemap.xml` et `/robots.txt` vont à l'API (`api/index.js`).
+
+### V1. Créer le projet
+
+1. Créez un compte sur https://vercel.com avec votre compte GitHub.
+2. **Add New → Project**, importez le dépôt `chocoboy12/jigiso`.
+3. Laissez *Root Directory* vide et *Framework Preset* sur **Other** :
+   `vercel.json` donne déjà les commandes.
+4. Avant de cliquer sur *Deploy*, ouvrez **Environment Variables** et ajoutez :
+
+| Variable | Valeur |
+|---|---|
+| `NODE_ENV` | `production` |
+| `MONGODB_URI` | l'adresse Atlas `mongodb+srv://…/malirent` (étape 1) |
+| `JWT_SECRET` | résultat de `openssl rand -hex 32` |
+| `JWT_EXPIRES_IN` | `7d` |
+| `CRON_SECRET` | un **autre** résultat de `openssl rand -hex 32` |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | étape 2 |
+| `EMAIL_USER`, `EMAIL_PASS` (ou `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`) | comme dans votre `backend/.env` |
+| `MAIL_FROM`, `ADMIN_EMAIL`, `ADMIN_NOTIFICATION_EMAIL` | comme dans votre `backend/.env` |
+| `ANTHROPIC_API_KEY` | facultatif (assistant MaliBot) |
+
+Inutile de mettre `CLIENT_URL` ou `VITE_API_URL` : le site appelle l'API à la
+même adresse, et l'adresse du site est celle du projet (votre domaine dès
+qu'il est branché). Les pièces d'identité vont dans la base (GridFS).
+
+5. Cliquez sur *Deploy*. Vérifiez ensuite `https://<projet>.vercel.app/api/health` :
+   il doit répondre `"base":"connectée"`. Si l'API répond « mal configurée »,
+   l'onglet **Logs** dit quelle variable manque.
+
+Ensuite, chaque `git push` sur `main` met le site et l'API à jour.
+
+### V2. Nom de domaine
+
+1. Dans le projet : **Settings → Domains → Add**. Tapez le nom voulu
+   (ex. `jigiso.com`) : Vercel dit s'il est libre et son prix, et l'achète
+   pour vous. Il se branche tout seul (DNS et HTTPS compris).
+2. Ajoutez aussi `www.jigiso.com` et choisissez la redirection vers `jigiso.com`.
+3. Redéployez une fois (**Deployments → … → Redeploy**) pour que le site et les
+   e-mails prennent la nouvelle adresse.
+
+> Un domaine acheté ailleurs (ex. un `.ml`) marche aussi : *Add* puis suivez
+> les enregistrements DNS que Vercel affiche, à saisir chez le vendeur du domaine.
+
+### V3. Tâches planifiées
+
+Sur un serveur classique, l'API lance elle-même ses tâches périodiques. Sur
+Vercel, elles sont appelées de l'extérieur :
+
+- **Lieux à proximité** (import OpenStreetMap) : une fois par jour, par Vercel,
+  rien à faire (`crons` dans `vercel.json`).
+- **Rappels de visite** (la veille et deux heures avant) : il faut un appel
+  toutes les 10 minutes. L'offre gratuite de Vercel ne lance une tâche qu'une
+  fois par jour : utilisez https://cron-job.org (gratuit) :
+  1. *Create cronjob*, adresse `https://jigiso.com/api/cron/rappels-visites`,
+     toutes les 10 minutes.
+  2. Onglet *Advanced → Headers* : `Authorization` = `Bearer <votre CRON_SECRET>`.
+  3. *Test run* doit répondre `{"success":true}`.
+
+Avec l'offre Vercel Pro, on peut à la place passer la ligne `rappels-visites`
+de `vercel.json` à `*/10 * * * *`.
+
+### V4. Application mobile
+
+```bash
+cd mobile
+flutter build appbundle --dart-define=API_URL=https://jigiso.com/api
+```
+
+### Bon à savoir
+
+- L'API tourne à Paris (`regions` dans `vercel.json`), proche du Mali : créez
+  le cluster Atlas en Europe (Paris ou Francfort) pour des réponses rapides.
+- Pour Google, déclarez `https://jigiso.com/sitemap.xml` dans Search Console
+  (voir « Apparaître sur Google »). Le plan du site est toujours à jour.
 
 ---
 
@@ -144,6 +228,7 @@ précise : *Inspection de l'URL* → *Demander une indexation*.
 | Hébergement | Emplacement | Réglage |
 |---|---|---|
 | Votre Mac | `backend/uploads/private/kyc` | aucun |
+| Vercel (option V) | dans la base Atlas (GridFS, collection `kyc`) | automatique |
 | Render (option A) | dans la base Atlas (GridFS, collection `kyc`) | `PRIVATE_STORAGE=mongo` |
 | Cloud Run (option B) | bucket Cloud Storage privé | `GCS_BUCKET` (posé par `deploy.sh`) |
 

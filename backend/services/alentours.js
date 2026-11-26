@@ -127,7 +127,7 @@ exports.synchroniserTuile = (cle) => {
     }
   })().finally(() => enCours.delete(cle));
   enCours.set(cle, tache);
-  return tache;
+  return require('../utils/enFond')(tache);   // sur Vercel : l'import continue après la réponse
 };
 
 /* ── Lecture ──────────────────────────────────────────────────── */
@@ -190,18 +190,29 @@ async function tuilesAEntretenir() {
   });
 }
 
-/** Au démarrage puis toutes les 6 h : importe les tuiles nouvelles, en échec ou vieilles d'une semaine, une à une */
+/**
+ * Importe, une à une, les tuiles nouvelles, en échec ou vieilles d'une semaine.
+ * `budget` (ms) : on n'entame plus de tuile au-delà — une fonction Vercel a
+ * une durée limitée ; le reste passe à la prochaine tâche planifiée.
+ */
+exports.entretenir = async ({ budget = Infinity } = {}) => {
+  const debut = Date.now();
+  const tuiles = await tuilesAEntretenir();
+  let faites = 0;
+  for (const t of tuiles) {
+    if (Date.now() - debut > budget) break;
+    await exports.synchroniserTuile(t).catch(() => {});
+    faites++;
+    if (faites < tuiles.length) await new Promise(r => setTimeout(r, 20000));   // politesse envers les serveurs publics
+  }
+  return { faites, restantes: tuiles.length - faites };
+};
+
+/** Serveur classique : au démarrage puis toutes les 6 h (sur Vercel : tâche planifiée, voir app.js) */
 let minuteur;
 exports.demarrer = () => {
   if (minuteur) return;
-  const tour = async () => {
-    try {
-      for (const t of await tuilesAEntretenir()) {
-        await exports.synchroniserTuile(t).catch(() => {});
-        await new Promise(r => setTimeout(r, 20000));   // politesse envers les serveurs publics
-      }
-    } catch (e) { console.error('[alentours]', e.message); }
-  };
+  const tour = () => exports.entretenir().catch(e => console.error('[alentours]', e.message));
   setTimeout(tour, 60 * 1000).unref();
   minuteur = setInterval(tour, 6 * 3600 * 1000);
   minuteur.unref();

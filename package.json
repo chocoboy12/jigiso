@@ -1,0 +1,6 @@
+{
+  "name": "jigiso",
+  "private": true,
+  "description": "JIGISO : site (frontend/) et API (backend/), déployés ensemble sur Vercel (voir vercel.json)",
+  "engines": { "node": "22.x" }
+}

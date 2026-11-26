@@ -87,7 +87,10 @@ const FROM_EMAIL = process.env.MAIL_FROM || process.env.SMTP_USER || process.env
 
 // Template HTML de base
 /* Adresse publique du site, pour les liens des e-mails (localhost en développement) */
-const SITE = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/$/, '');
+// Sur Vercel sans CLIENT_URL : l'adresse de production du projet (le nom de domaine)
+const SITE = (process.env.CLIENT_URL
+  || (process.env.VERCEL_PROJECT_PRODUCTION_URL && `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
+  || 'http://localhost:5173').replace(/\/$/, '');
 
 const baseTemplate = (content, title = 'JIGISO') => `
 <!DOCTYPE html>
@@ -688,3 +691,10 @@ exports.sendVisitReminder = async ({ to, name, propertyTitle, quand, ou, avec, t
   `, 'Rappel de visite');
   return sendEmail({ to, subject: `⏰ Rappel de visite — ${propertyTitle}`, html });
 };
+
+/* Tout envoi d'e-mail peut partir après la réponse (sans await) : sur Vercel,
+   on demande d'attendre sa fin, sinon le message serait coupé en route. */
+const enFond = require('../utils/enFond');
+for (const [nom, fn] of Object.entries(exports)) {
+  if (/^send/.test(nom) && typeof fn === 'function') exports[nom] = (...args) => enFond(fn(...args));
+}

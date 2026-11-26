@@ -114,3 +114,8 @@ exports.send = async (tokens, { title, body }) => {
 
   return { sent, failed, invalides };
 };
+
+/* Notification envoyée après la réponse : sur Vercel, on attend sa fin. */
+const enFond = require('../utils/enFond');
+const envoyerPush = exports.send;
+exports.send = (...args) => enFond(envoyerPush(...args));
